@@ -326,6 +326,55 @@
     <p>Trage ein, welches Item mit welchem angezeigten Namen ersetzt werden soll, und lade am Ende eine fertige Resourcepack-Ordnerstruktur herunter. Du musst danach nur noch dein Modell und deine Textur in den passenden Ordner legen.</p>
   </header>
 
+  <!-- GitHub sync & project selector -->
+  <section class="panel">
+    <h2>Projekt <span class="n">0</span></h2>
+    <p class="sub">Verbinde optional ein GitHub-Repo — dann wird jedes generierte Pack dort gesichert und du kannst später hier weitermachen.</p>
+
+    <div class="grid cols-2">
+      <div class="field">
+        <label for="projectSelect">Pack</label>
+        <select id="projectSelect">
+          <option value="__new__">🆕 Neues Pack</option>
+        </select>
+        <div class="hint" id="projectSelectHint">Erst mit GitHub verbinden, um gespeicherte Packs zu sehen.</div>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn" id="refreshSavedBtn" style="width:100%;">🔄 Liste aktualisieren</button>
+      </div>
+    </div>
+
+    <details id="githubDetails" style="margin-top:14px;">
+      <summary id="githubSummary">GitHub-Verbindung einrichten</summary>
+      <div class="grid cols-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="ghToken">Personal Access Token</label>
+          <input type="password" id="ghToken" placeholder="ghp_..." autocomplete="off">
+          <div class="hint">Braucht Schreibrechte auf das Repo (Scope <code>repo</code> bzw. fine-grained "Contents: Read & write"). Wird nur im Browser-Speicher dieser Sitzung gehalten — nirgendwo sonst gespeichert.</div>
+        </div>
+        <div class="field">
+          <label for="ghRepo">Repository (owner/repo)</label>
+          <input type="text" id="ghRepo" placeholder="dein-name/mein-cit-repo" autocomplete="off">
+        </div>
+      </div>
+      <div class="grid cols-2" style="margin-top:12px;">
+        <div class="field">
+          <label for="ghBranch">Branch</label>
+          <input type="text" id="ghBranch" value="main" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="ghFolder">Ordner im Repo</label>
+          <input type="text" id="ghFolder" value="cit-packs" autocomplete="off">
+        </div>
+      </div>
+      <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <button class="btn btn-accent" id="ghConnectBtn">🔗 Verbinden</button>
+        <span class="hint" id="ghStatus">Nicht verbunden.</span>
+      </div>
+    </details>
+  </section>
+
   <!-- Pack settings -->
   <section class="panel">
     <h2>Pack-Einstellungen <span class="n">1</span></h2>
@@ -343,8 +392,8 @@
         <label for="packFormat">Pack Format</label>
         <input type="text" inputmode="numeric" id="packFormat" value="48" list="packFormatList" autocomplete="off">
         <datalist id="packFormatList"></datalist>
-        <div class="hint">Frei eingeben oder aus der Liste wählen.</div>
-        <div class="hint">z. B. 15 (1.20), 34 (1.21), 48 (1.21.4+). OptiFine ist hier meist tolerant — bei Warnung im Spiel einfach anpassen.</div>
+        <div class="hint">Frei eingeben oder aus der Liste wählen (scrollbar).</div>
+        <div class="hint" id="packFormatModeHint"></div>
       </div>
     </div>
   </section>
@@ -440,7 +489,7 @@
   <!-- Generate -->
   <section class="panel">
     <h2>Pack erstellen <span class="n">3</span></h2>
-    <p class="sub">Lädt ein ZIP mit fertiger Ordnerstruktur, Properties- und Platzhalter-Modell-Dateien herunter. Du musst danach nur noch <code>model.json</code> (dein eigenes Modell) und <code>texture.png</code> in den jeweiligen Ordner legen.</p>
+    <p class="sub">Lädt ein ZIP mit fertiger Ordnerstruktur, Properties- und Platzhalter-Modell-Dateien herunter. Du musst danach nur noch <code>model.json</code> (dein eigenes Modell) und <code>texture.png</code> in den jeweiligen Ordner legen. Bei aktiver GitHub-Verbindung wird das Pack zusätzlich dort gesichert.</p>
     <button class="btn btn-accent btn-big" id="downloadBtn" disabled>📦 Pack generieren &amp; herunterladen</button>
   </section>
 
@@ -532,9 +581,48 @@ const packFormatList = document.getElementById('packFormatList');
 PACK_FORMATS.forEach(pf=>{
   const opt = document.createElement('option');
   opt.value = pf.format;
-  opt.label = `${pf.format} — Minecraft ${pf.versions}`;
+  const labelText = `Minecraft ${pf.versions}`;
+  opt.label = labelText;
+  opt.textContent = labelText; // Fallback, da manche Browser das label-Attribut in <datalist> ignorieren
   packFormatList.appendChild(opt);
 });
+
+// Ab pack_format 69 (Minecraft 1.21.9 / 26.x) nutzt pack.mcmeta min_format/max_format
+// statt eines einzelnen pack_format-Werts. Siehe minecraft.wiki/w/Pack.mcmeta
+const MODERN_FORMAT_THRESHOLD = 69;
+const MODERN_MAX_FORMAT = 200; // hoch angesetzt, damit der Pack auch mit künftigen Versionen kompatibel bleibt
+
+function buildPackMeta(description, packFormat){
+  if(packFormat >= MODERN_FORMAT_THRESHOLD){
+    return {
+      pack: {
+        description,
+        min_format: packFormat,
+        max_format: MODERN_MAX_FORMAT
+      }
+    };
+  }
+  return {
+    pack: { description, pack_format: packFormat }
+  };
+}
+
+function updatePackFormatHint(){
+  const val = parseInt($('packFormat').value, 10);
+  const hintEl = $('packFormatModeHint');
+  if(isNaN(val)){
+    hintEl.textContent = "Zahl eingeben oder aus der Liste wählen.";
+    return;
+  }
+  const match = PACK_FORMATS.find(pf => pf.format === val);
+  const versionText = match ? ` (Minecraft ${match.versions})` : "";
+  if(val >= MODERN_FORMAT_THRESHOLD){
+    hintEl.textContent = `Format ${val}${versionText} → pack.mcmeta nutzt min_format/max_format (ab 1.21.9 / 26.x).`;
+  } else {
+    hintEl.textContent = `Format ${val}${versionText} → pack.mcmeta nutzt das klassische pack_format-Feld.`;
+  }
+}
+$('packFormat').addEventListener('input', updatePackFormatHint);
 
 let entries = [];
 let counter = 0;
@@ -619,6 +707,25 @@ function baseName(filename){
   return withoutExt || "model";
 }
 
+function readFileAsText(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = ()=>resolve(r.result);
+    r.onerror = ()=>reject(r.error);
+    r.readAsText(file);
+  });
+}
+
+// Liefert reine Base64-Daten ohne "data:...;base64," Prefix
+function readFileAsBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r = new FileReader();
+    r.onload = ()=>resolve(String(r.result).split(",")[1] || "");
+    r.onerror = ()=>reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
 function showToast(msg){
   const t = $('toast');
   t.textContent = msg;
@@ -627,7 +734,7 @@ function showToast(msg){
   showToast._t = setTimeout(()=>t.classList.remove('show'), 2200);
 }
 
-$('addBtn').addEventListener('click', ()=>{
+$('addBtn').addEventListener('click', async ()=>{
   const itemId = $('itemId').value.trim().replace(/^minecraft:/,'');
   const name = $('itemName').value.trim();
   const matchType = $('matchType').value;
@@ -641,8 +748,29 @@ $('addBtn').addEventListener('click', ()=>{
   let folder = slugify($('folderSlug').value || name);
   folder = uniqueSlug(folder);
 
-  const textureFile = $('textureUpload').files[0] || null;
-  const modelFile = $('modelUpload').files[0] || null;
+  const textureFileInput = $('textureUpload').files[0] || null;
+  const modelFileInput = $('modelUpload').files[0] || null;
+
+  const addBtnEl = $('addBtn');
+  addBtnEl.disabled = true;
+
+  let modelFile = null;
+  let textureFile = null;
+  try{
+    if(modelFileInput){
+      const content = await readFileAsText(modelFileInput);
+      modelFile = { name: modelFileInput.name.replace(/[^a-zA-Z0-9_.\-]+/g,'_'), content };
+    }
+    if(textureFileInput){
+      const dataBase64 = await readFileAsBase64(textureFileInput);
+      textureFile = { name: textureFileInput.name.replace(/[^a-zA-Z0-9_.\-]+/g,'_'), dataBase64 };
+    }
+  } catch(err){
+    console.error(err);
+    showToast("❌ Datei konnte nicht gelesen werden");
+    addBtnEl.disabled = false;
+    return;
+  }
 
   entries.push({
     id: ++counter,
@@ -656,6 +784,7 @@ $('addBtn').addEventListener('click', ()=>{
   render();
   showToast("✅ Hinzugefügt: " + name);
   $('clearFormBtn').click();
+  addBtnEl.disabled = false;
 });
 
 function removeEntry(id){
@@ -854,6 +983,183 @@ function mainReadme(){
   return lines.join("\n") + "\n";
 }
 
+// ---------- GitHub Sync ----------
+let ghState = { token:"", owner:"", repo:"", branch:"main", folder:"cit-packs", connected:false };
+let savedPacks = [];
+
+function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
+function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str.replace(/\n/g,'')))); }
+
+async function arrayBufferToBase64(buffer){
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for(let i=0; i<bytes.length; i+=chunkSize){
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i+chunkSize));
+  }
+  return btoa(binary);
+}
+
+function ghHeaders(){
+  return {
+    "Authorization": `Bearer ${ghState.token}`,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
+
+function ghEncodePath(path){
+  return path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+}
+
+async function ghCheckRepo(){
+  const res = await fetch(`https://api.github.com/repos/${ghState.owner}/${ghState.repo}`, { headers: ghHeaders() });
+  if(res.status === 401 || res.status === 403) throw new Error("Token ungültig oder ohne Zugriff.");
+  if(res.status === 404) throw new Error("Repository nicht gefunden.");
+  if(!res.ok) throw new Error("GitHub-Fehler: " + res.status);
+  return res.json();
+}
+
+async function ghListFolder(path){
+  const res = await fetch(`https://api.github.com/repos/${ghState.owner}/${ghState.repo}/contents/${ghEncodePath(path)}?ref=${encodeURIComponent(ghState.branch)}`, { headers: ghHeaders() });
+  if(res.status === 404) return [];
+  if(!res.ok) throw new Error("GitHub-Fehler: " + res.status);
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+async function ghGetFile(path){
+  const res = await fetch(`https://api.github.com/repos/${ghState.owner}/${ghState.repo}/contents/${ghEncodePath(path)}?ref=${encodeURIComponent(ghState.branch)}`, { headers: ghHeaders() });
+  if(res.status === 404) return null;
+  if(!res.ok) throw new Error("GitHub-Fehler: " + res.status);
+  return res.json();
+}
+
+async function ghPutFile(path, base64Content, message){
+  const existing = await ghGetFile(path);
+  const body = { message, content: base64Content, branch: ghState.branch };
+  if(existing && existing.sha) body.sha = existing.sha;
+  const res = await fetch(`https://api.github.com/repos/${ghState.owner}/${ghState.repo}/contents/${ghEncodePath(path)}`, {
+    method: "PUT",
+    headers: { ...ghHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if(!res.ok){
+    const errText = await res.text().catch(()=> "");
+    throw new Error("GitHub-Fehler beim Speichern (" + res.status + "): " + errText);
+  }
+  return res.json();
+}
+
+function serializeProject(){
+  return {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    packName: $('packName').value.trim() || "CIT Pack",
+    packDesc: $('packDesc').value.trim() || "Custom Item Textures",
+    packFormat: parseInt($('packFormat').value, 10) || 48,
+    entries: entries.map(e => ({
+      itemId: e.itemId, name: e.name, matchType: e.matchType, modelType: e.modelType,
+      folder: e.folder, lore: e.lore,
+      modelFile: e.modelFile, textureFile: e.textureFile,
+      modelBaseName: e.modelBaseName
+    }))
+  };
+}
+
+function loadProjectFromData(data){
+  $('packName').value = data.packName || "Mein CIT Pack";
+  $('packDesc').value = data.packDesc || "Custom Item Textures";
+  $('packFormat').value = data.packFormat || 48;
+  entries = (data.entries || []).map(e => ({ ...e, id: ++counter }));
+  render();
+  updatePackFormatHint();
+}
+
+function resetProject(){
+  entries = [];
+  $('packName').value = "Mein CIT Pack";
+  $('packDesc').value = "Custom Item Textures";
+  $('packFormat').value = "48";
+  updatePackFormatHint();
+  render();
+}
+
+async function refreshSavedPacks(){
+  const select = $('projectSelect');
+  const hint = $('projectSelectHint');
+  if(!ghState.connected){
+    hint.textContent = "Erst mit GitHub verbinden, um gespeicherte Packs zu sehen.";
+    return;
+  }
+  hint.textContent = "Lade Liste...";
+  try{
+    const items = await ghListFolder(ghState.folder);
+    savedPacks = items
+      .filter(it => it.type === "file" && it.name.endsWith(".project.json"))
+      .map(it => ({ name: it.name.replace(/\.project\.json$/,''), path: it.path }));
+    const current = select.value;
+    select.innerHTML = '<option value="__new__">🆕 Neues Pack</option>' +
+      savedPacks.map(p => `<option value="${escapeHtml(p.path)}">${escapeHtml(p.name)}</option>`).join('');
+    if(savedPacks.some(p=>p.path === current)) select.value = current;
+    hint.textContent = savedPacks.length
+      ? `${savedPacks.length} gespeicherte(s) Pack(s) in "${ghState.folder}/" gefunden.`
+      : `Noch keine gespeicherten Packs in "${ghState.folder}/".`;
+  } catch(err){
+    console.error(err);
+    hint.textContent = "⚠️ Fehler beim Laden der Liste.";
+  }
+}
+
+$('ghConnectBtn').addEventListener('click', async ()=>{
+  const token = $('ghToken').value.trim();
+  const repoFull = $('ghRepo').value.trim();
+  const branch = $('ghBranch').value.trim() || "main";
+  const folder = $('ghFolder').value.trim().replace(/^\/+|\/+$/g,'') || "cit-packs";
+
+  if(!token || !repoFull.includes('/')){
+    showToast("⚠️ Bitte Token und Repo als „owner/repo“ angeben");
+    return;
+  }
+  const [owner, repo] = repoFull.split('/');
+  ghState = { token, owner, repo, branch, folder, connected: false };
+  $('ghStatus').textContent = "Verbinde...";
+  try{
+    await ghCheckRepo();
+    ghState.connected = true;
+    $('ghStatus').textContent = `✅ Verbunden mit ${owner}/${repo} (Branch „${branch}“)`;
+    $('githubSummary').textContent = `GitHub: ${owner}/${repo}`;
+    await refreshSavedPacks();
+    showToast("🔗 Mit GitHub verbunden");
+  } catch(err){
+    ghState.connected = false;
+    $('ghStatus').textContent = "❌ " + err.message;
+    showToast("❌ Verbindung fehlgeschlagen");
+  }
+});
+
+$('refreshSavedBtn').addEventListener('click', ()=>{
+  if(!ghState.connected){ showToast("⚠️ Erst mit GitHub verbinden"); return; }
+  refreshSavedPacks();
+});
+
+$('projectSelect').addEventListener('change', async ()=>{
+  const val = $('projectSelect').value;
+  if(val === "__new__"){ resetProject(); return; }
+  if(!ghState.connected){ return; }
+  try{
+    showToast("⏳ Lade Pack...");
+    const fileData = await ghGetFile(val);
+    if(!fileData) throw new Error("Datei nicht gefunden");
+    const data = JSON.parse(base64ToUtf8(fileData.content));
+    loadProjectFromData(data);
+    showToast("✅ Pack geladen: " + (data.packName || ""));
+  } catch(err){
+    console.error(err);
+    showToast("❌ Konnte Pack nicht laden");
+  }
+});
+
 $('downloadBtn').addEventListener('click', async ()=>{
   if(entries.length === 0) return;
   const btn = $('downloadBtn');
@@ -867,9 +1173,7 @@ $('downloadBtn').addEventListener('click', async ()=>{
     const packFormat = parseInt($('packFormat').value, 10) || 48;
     const root = zip.folder(packName);
 
-    root.file("pack.mcmeta", JSON.stringify({
-      pack: { pack_format: packFormat, description: packDesc }
-    }, null, 2));
+    root.file("pack.mcmeta", JSON.stringify(buildPackMeta(packDesc, packFormat), null, 2));
 
     root.file("ANLEITUNG.txt", mainReadme());
 
@@ -879,13 +1183,13 @@ $('downloadBtn').addEventListener('click', async ()=>{
       f.file(e.folder + ".properties", propertiesContent(e));
 
       if(e.modelFile){
-        f.file(e.modelFile.name, e.modelFile);
+        f.file(e.modelFile.name, e.modelFile.content);
       } else {
         f.file("model.json", JSON.stringify(modelJson(e.modelType), null, 2));
       }
 
       if(e.textureFile){
-        f.file(e.textureFile.name, e.textureFile);
+        f.file(e.textureFile.name, e.textureFile.dataBase64, { base64: true });
       }
 
       f.file("ANLEITUNG.txt", folderReadme(e));
@@ -901,6 +1205,35 @@ $('downloadBtn').addEventListener('click', async ()=>{
     document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(url), 4000);
     showToast("📦 Pack heruntergeladen!");
+
+    if(ghState.connected){
+      try{
+        btn.textContent = "☁️ Speichere auf GitHub...";
+        const slug = slugify(packName);
+        const projectPath = `${ghState.folder}/${slug}.project.json`;
+        const zipPath = `${ghState.folder}/${slug}.zip`;
+        const projectData = serializeProject();
+
+        await ghPutFile(
+          projectPath,
+          utf8ToBase64(JSON.stringify(projectData, null, 2)),
+          `CIT Pack Creator: "${packName}" aktualisiert`
+        );
+        const zipBase64 = await arrayBufferToBase64(await blob.arrayBuffer());
+        await ghPutFile(
+          zipPath,
+          zipBase64,
+          `CIT Pack Creator: "${packName}.zip" aktualisiert`
+        );
+
+        await refreshSavedPacks();
+        $('projectSelect').value = projectPath;
+        showToast(`☁️ Auch in GitHub gespeichert (${ghState.owner}/${ghState.repo})`);
+      } catch(err){
+        console.error(err);
+        showToast("⚠️ Lokal gespeichert, aber GitHub-Sync fehlgeschlagen");
+      }
+    }
   } catch(err){
     console.error(err);
     showToast("❌ Fehler beim Erstellen — siehe Konsole");
@@ -912,6 +1245,7 @@ $('downloadBtn').addEventListener('click', async ()=>{
 
 $('packName').addEventListener('input', renderTree);
 
+updatePackFormatHint();
 render();
 </script>
 </body>
