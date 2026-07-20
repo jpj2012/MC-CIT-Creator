@@ -329,7 +329,7 @@
   <!-- GitHub sync & project selector -->
   <section class="panel">
     <h2>Projekt <span class="n">0</span></h2>
-    <p class="sub">Verbinde optional ein GitHub-Repo — dann wird jedes generierte Pack dort gesichert und du kannst später hier weitermachen.</p>
+    <p class="sub">Verbinde optional deinen CIT-Pack-Worker — dann wird jedes generierte Pack darüber in GitHub gesichert und du kannst später hier weitermachen.</p>
 
     <div class="grid cols-2">
       <div class="field">
@@ -337,7 +337,7 @@
         <select id="projectSelect">
           <option value="__new__">🆕 Neues Pack</option>
         </select>
-        <div class="hint" id="projectSelectHint">Erst mit GitHub verbinden, um gespeicherte Packs zu sehen.</div>
+        <div class="hint" id="projectSelectHint">Erst mit dem Worker verbinden, um gespeicherte Packs zu sehen.</div>
       </div>
       <div class="field">
         <label>&nbsp;</label>
@@ -346,27 +346,11 @@
     </div>
 
     <details id="githubDetails" style="margin-top:14px;">
-      <summary id="githubSummary">GitHub-Verbindung einrichten</summary>
-      <div class="grid cols-2" style="margin-top:12px;">
-        <div class="field">
-          <label for="ghToken">Personal Access Token</label>
-          <input type="password" id="ghToken" placeholder="ghp_..." autocomplete="off">
-          <div class="hint">Braucht Schreibrechte auf das Repo (Scope <code>repo</code> bzw. fine-grained "Contents: Read & write"). Wird nur im Browser-Speicher dieser Sitzung gehalten — nirgendwo sonst gespeichert.</div>
-        </div>
-        <div class="field">
-          <label for="ghRepo">Repository (owner/repo)</label>
-          <input type="text" id="ghRepo" placeholder="dein-name/mein-cit-repo" autocomplete="off">
-        </div>
-      </div>
-      <div class="grid cols-2" style="margin-top:12px;">
-        <div class="field">
-          <label for="ghBranch">Branch</label>
-          <input type="text" id="ghBranch" value="main" autocomplete="off">
-        </div>
-        <div class="field">
-          <label for="ghFolder">Ordner im Repo</label>
-          <input type="text" id="ghFolder" value="cit-packs" autocomplete="off">
-        </div>
+      <summary id="githubSummary">Worker-Verbindung einrichten</summary>
+      <div class="field" style="margin-top:12px;">
+        <label for="workerUrl">Worker-URL</label>
+        <input type="text" id="workerUrl" placeholder="https://cit-pack-worker.dein-name.workers.dev" autocomplete="off">
+        <div class="hint">Die URL deines Cloudflare Workers (siehe <code>cit-pack-worker.js</code>). Dein GitHub-Token liegt sicher im Worker — hier musst du nichts Geheimes eingeben.</div>
       </div>
       <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
         <button class="btn btn-accent" id="ghConnectBtn">🔗 Verbinden</button>
@@ -983,12 +967,9 @@ function mainReadme(){
   return lines.join("\n") + "\n";
 }
 
-// ---------- GitHub Sync ----------
-let ghState = { token:"", owner:"", repo:"", branch:"main", folder:"cit-packs", connected:false };
+// ---------- Worker Sync (Worker hält den GitHub-Token geheim) ----------
+let ghState = { workerUrl:"", connected:false };
 let savedPacks = [];
-
-function utf8ToBase64(str){ return btoa(unescape(encodeURIComponent(str))); }
-function base64ToUtf8(str){ return decodeURIComponent(escape(atob(str.replace(/\n/g,'')))); }
 
 async function arrayBufferToBase64(buffer){
   let binary = "";
@@ -1000,53 +981,42 @@ async function arrayBufferToBase64(buffer){
   return btoa(binary);
 }
 
-function ghHeaders(){
-  return {
-    "Authorization": `Bearer ${ghState.token}`,
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28"
-  };
+function workerFetch(path, options){
+  const base = ghState.workerUrl.replace(/\/+$/,'');
+  return fetch(base + path, options);
 }
 
-function ghEncodePath(path){
-  return path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
-}
-
-async function ghCheckRepo(){
-  const res = await fetch(`https://api.github.com/repos/${ghState.owner}/${ghState.repo}`, { headers: ghHeaders() });
-  if(res.status === 401 || res.status === 403) throw new Error("Token ungültig oder ohne Zugriff.");
-  if(res.status === 404) throw new Error("Repository nicht gefunden.");
-  if(!res.ok) throw new Error("GitHub-Fehler: " + res.status);
+async function workerCheck(){
+  const res = await workerFetch("/packs", { method: "GET" });
+  if(!res.ok){
+    const t = await res.text().catch(()=> "");
+    throw new Error(`Worker antwortet mit ${res.status}: ${t}`);
+  }
   return res.json();
 }
 
-async function ghListFolder(path){
-  const res = await fetch(`https://api.github.com/repos/${ghState.owner}/${ghState.repo}/contents/${ghEncodePath(path)}?ref=${encodeURIComponent(ghState.branch)}`, { headers: ghHeaders() });
-  if(res.status === 404) return [];
-  if(!res.ok) throw new Error("GitHub-Fehler: " + res.status);
-  const data = await res.json();
-  return Array.isArray(data) ? data : [];
+async function workerListPacks(){
+  const res = await workerFetch("/packs", { method: "GET" });
+  if(!res.ok) throw new Error("Worker-Fehler: " + res.status);
+  return res.json();
 }
 
-async function ghGetFile(path){
-  const res = await fetch(`https://api.github.com/repos/${ghState.owner}/${ghState.repo}/contents/${ghEncodePath(path)}?ref=${encodeURIComponent(ghState.branch)}`, { headers: ghHeaders() });
+async function workerGetPack(name){
+  const res = await workerFetch("/packs/" + encodeURIComponent(name), { method: "GET" });
   if(res.status === 404) return null;
-  if(!res.ok) throw new Error("GitHub-Fehler: " + res.status);
+  if(!res.ok) throw new Error("Worker-Fehler: " + res.status);
   return res.json();
 }
 
-async function ghPutFile(path, base64Content, message){
-  const existing = await ghGetFile(path);
-  const body = { message, content: base64Content, branch: ghState.branch };
-  if(existing && existing.sha) body.sha = existing.sha;
-  const res = await fetch(`https://api.github.com/repos/${ghState.owner}/${ghState.repo}/contents/${ghEncodePath(path)}`, {
+async function workerSavePack(name, project, zipBase64){
+  const res = await workerFetch("/packs", {
     method: "PUT",
-    headers: { ...ghHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, project, zipBase64 })
   });
   if(!res.ok){
     const errText = await res.text().catch(()=> "");
-    throw new Error("GitHub-Fehler beim Speichern (" + res.status + "): " + errText);
+    throw new Error(`Speichern fehlgeschlagen (${res.status}): ${errText}`);
   }
   return res.json();
 }
@@ -1089,22 +1059,19 @@ async function refreshSavedPacks(){
   const select = $('projectSelect');
   const hint = $('projectSelectHint');
   if(!ghState.connected){
-    hint.textContent = "Erst mit GitHub verbinden, um gespeicherte Packs zu sehen.";
+    hint.textContent = "Erst mit dem Worker verbinden, um gespeicherte Packs zu sehen.";
     return;
   }
   hint.textContent = "Lade Liste...";
   try{
-    const items = await ghListFolder(ghState.folder);
-    savedPacks = items
-      .filter(it => it.type === "file" && it.name.endsWith(".project.json"))
-      .map(it => ({ name: it.name.replace(/\.project\.json$/,''), path: it.path }));
+    savedPacks = await workerListPacks();
     const current = select.value;
     select.innerHTML = '<option value="__new__">🆕 Neues Pack</option>' +
-      savedPacks.map(p => `<option value="${escapeHtml(p.path)}">${escapeHtml(p.name)}</option>`).join('');
-    if(savedPacks.some(p=>p.path === current)) select.value = current;
+      savedPacks.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
+    if(savedPacks.some(p=>p.name === current)) select.value = current;
     hint.textContent = savedPacks.length
-      ? `${savedPacks.length} gespeicherte(s) Pack(s) in "${ghState.folder}/" gefunden.`
-      : `Noch keine gespeicherten Packs in "${ghState.folder}/".`;
+      ? `${savedPacks.length} gespeicherte(s) Pack(s) gefunden.`
+      : "Noch keine gespeicherten Packs — lade das erste hoch.";
   } catch(err){
     console.error(err);
     hint.textContent = "⚠️ Fehler beim Laden der Liste.";
@@ -1112,25 +1079,21 @@ async function refreshSavedPacks(){
 }
 
 $('ghConnectBtn').addEventListener('click', async ()=>{
-  const token = $('ghToken').value.trim();
-  const repoFull = $('ghRepo').value.trim();
-  const branch = $('ghBranch').value.trim() || "main";
-  const folder = $('ghFolder').value.trim().replace(/^\/+|\/+$/g,'') || "cit-packs";
+  const workerUrl = $('workerUrl').value.trim();
 
-  if(!token || !repoFull.includes('/')){
-    showToast("⚠️ Bitte Token und Repo als „owner/repo“ angeben");
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
+    showToast("⚠️ Bitte eine gültige Worker-URL angeben");
     return;
   }
-  const [owner, repo] = repoFull.split('/');
-  ghState = { token, owner, repo, branch, folder, connected: false };
+  ghState = { workerUrl, connected: false };
   $('ghStatus').textContent = "Verbinde...";
   try{
-    await ghCheckRepo();
+    await workerCheck();
     ghState.connected = true;
-    $('ghStatus').textContent = `✅ Verbunden mit ${owner}/${repo} (Branch „${branch}“)`;
-    $('githubSummary').textContent = `GitHub: ${owner}/${repo}`;
+    $('ghStatus').textContent = "✅ Verbunden";
+    $('githubSummary').textContent = "Worker: " + workerUrl.replace(/^https?:\/\//,'');
     await refreshSavedPacks();
-    showToast("🔗 Mit GitHub verbunden");
+    showToast("🔗 Mit Worker verbunden");
   } catch(err){
     ghState.connected = false;
     $('ghStatus').textContent = "❌ " + err.message;
@@ -1139,7 +1102,7 @@ $('ghConnectBtn').addEventListener('click', async ()=>{
 });
 
 $('refreshSavedBtn').addEventListener('click', ()=>{
-  if(!ghState.connected){ showToast("⚠️ Erst mit GitHub verbinden"); return; }
+  if(!ghState.connected){ showToast("⚠️ Erst mit dem Worker verbinden"); return; }
   refreshSavedPacks();
 });
 
@@ -1149,9 +1112,8 @@ $('projectSelect').addEventListener('change', async ()=>{
   if(!ghState.connected){ return; }
   try{
     showToast("⏳ Lade Pack...");
-    const fileData = await ghGetFile(val);
-    if(!fileData) throw new Error("Datei nicht gefunden");
-    const data = JSON.parse(base64ToUtf8(fileData.content));
+    const data = await workerGetPack(val);
+    if(!data) throw new Error("Pack nicht gefunden");
     loadProjectFromData(data);
     showToast("✅ Pack geladen: " + (data.packName || ""));
   } catch(err){
@@ -1208,30 +1170,18 @@ $('downloadBtn').addEventListener('click', async ()=>{
 
     if(ghState.connected){
       try{
-        btn.textContent = "☁️ Speichere auf GitHub...";
-        const slug = slugify(packName);
-        const projectPath = `${ghState.folder}/${slug}.project.json`;
-        const zipPath = `${ghState.folder}/${slug}.zip`;
+        btn.textContent = "☁️ Speichere über Worker...";
         const projectData = serializeProject();
-
-        await ghPutFile(
-          projectPath,
-          utf8ToBase64(JSON.stringify(projectData, null, 2)),
-          `CIT Pack Creator: "${packName}" aktualisiert`
-        );
         const zipBase64 = await arrayBufferToBase64(await blob.arrayBuffer());
-        await ghPutFile(
-          zipPath,
-          zipBase64,
-          `CIT Pack Creator: "${packName}.zip" aktualisiert`
-        );
+
+        await workerSavePack(packName, projectData, zipBase64);
 
         await refreshSavedPacks();
-        $('projectSelect').value = projectPath;
-        showToast(`☁️ Auch in GitHub gespeichert (${ghState.owner}/${ghState.repo})`);
+        $('projectSelect').value = packName;
+        showToast("☁️ Auch gespeichert (via Worker)");
       } catch(err){
         console.error(err);
-        showToast("⚠️ Lokal gespeichert, aber GitHub-Sync fehlgeschlagen");
+        showToast("⚠️ Lokal gespeichert, aber Worker-Sync fehlgeschlagen");
       }
     }
   } catch(err){
