@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIT Pack Creator — OptiFine Custom Item Textures</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg: #1c1b1a;
+    --bg-grid: #201f1e;
+    --panel: #2a2826;
+    --panel-raised: #35322f;
+    --border-hi: #55504a;
+    --border-lo: #0e0d0c;
+    --text: #ece6d9;
+    --text-muted: #a89f8f;
+    --accent: #6ecf7a;      /* emerald */
+    --accent-dark: #4a9a55;
+    --accent2: #6cc7d6;     /* diamond */
+    --gold: #e2b64a;        /* enchant glint */
+    --danger: #d1533c;      /* redstone */
+    --slot: #2f2c29;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 32px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 32px),
+      var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.5;
+    padding: 28px 16px 80px;
+  }
+  .wrap{ max-width: 880px; margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  header{ margin-bottom: 26px; }
+  .eyebrow{
+    display:inline-block;
+    font-family: 'Consolas','JetBrains Mono',monospace;
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: rgba(110,207,122,0.1);
+    border: 1px solid rgba(110,207,122,0.35);
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin-bottom: 10px;
+  }
+  h1{
+    margin: 0 0 6px;
+    font-size: 28px;
+    letter-spacing: .01em;
+    font-weight: 800;
+    text-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+  }
+  h1 .accent{ color: var(--accent); }
+  header p{
+    margin: 0;
+    color: var(--text-muted);
+    max-width: 62ch;
+    font-size: 14.5px;
+  }
+
+  /* ---------- panel (MC button bevel look) ---------- */
+  .panel{
+    background: var(--panel);
+    border-top: 2px solid var(--border-hi);
+    border-left: 2px solid var(--border-hi);
+    border-right: 2px solid var(--border-lo);
+    border-bottom: 2px solid var(--border-lo);
+    padding: 18px 20px;
+    margin-bottom: 18px;
+    border-radius: 2px;
+  }
+  .panel h2{
+    margin: 0 0 4px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--gold);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .panel h2 .n{
+    font-family:'Consolas','JetBrains Mono',monospace;
+    font-size:11px;
+    color: var(--text-muted);
+    border:1px solid var(--border-hi);
+    border-radius:3px;
+    padding:1px 6px;
+  }
+  .panel .sub{ color: var(--text-muted); font-size: 13px; margin: 0 0 14px; }
+
+  /* ---------- form ---------- */
+  .grid{ display:grid; gap: 12px; }
+  .grid.cols-2{ grid-template-columns: 1fr 1fr; }
+  .grid.cols-3{ grid-template-columns: 1.3fr 1fr 1fr; }
+  @media (max-width: 640px){
+    .grid.cols-2, .grid.cols-3{ grid-template-columns: 1fr; }
+  }
+  label{
+    display:block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  input[type=text], input[type=number], select, textarea{
+    width: 100%;
+    background: var(--slot);
+    border-top: 2px solid var(--border-lo);
+    border-left: 2px solid var(--border-lo);
+    border-right: 2px solid var(--border-hi);
+    border-bottom: 2px solid var(--border-hi);
+    color: var(--text);
+    font-family: 'Consolas','JetBrains Mono',monospace;
+    font-size: 14px;
+    padding: 9px 10px;
+    border-radius: 2px;
+  }
+  input:focus, select:focus, textarea:focus{
+    outline: 2px solid var(--accent2);
+    outline-offset: 1px;
+  }
+  .field{ margin-bottom: 2px; }
+  .hint{ font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+  .check-row{ display:flex; align-items:center; gap:8px; margin-top: 4px;}
+  .check-row input{ width:auto; }
+  .check-row label{ margin:0; text-transform:none; letter-spacing:0; font-size:13px; color:var(--text); }
+
+  button{
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+  }
+  .btn{
+    background: var(--panel-raised);
+    border-top: 2px solid var(--border-hi);
+    border-left: 2px solid var(--border-hi);
+    border-right: 2px solid var(--border-lo);
+    border-bottom: 2px solid var(--border-lo);
+    color: var(--text);
+    padding: 10px 16px;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: .03em;
+    border-radius: 2px;
+    text-transform: uppercase;
+  }
+  .btn:hover{ filter: brightness(1.12); }
+  .btn:active{ transform: translateY(1px); }
+  .btn-accent{
+    background: var(--accent-dark);
+    border-top-color: #8fe89a;
+    border-left-color: #8fe89a;
+    color: #10240f;
+  }
+  .btn-accent:hover{ background: var(--accent); }
+  .btn-big{
+    width: 100%;
+    padding: 16px;
+    font-size: 15px;
+  }
+  .btn-big:disabled{
+    opacity: .45;
+    cursor: not-allowed;
+    filter:none;
+  }
+  .btn-danger{
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--danger);
+    padding: 4px 8px;
+    font-size: 12px;
+    text-transform: none;
+  }
+  .btn-danger:hover{ background: rgba(209,83,60,0.15); }
+
+  /* ---------- inventory / added items ---------- */
+  .empty-state{
+    border: 1px dashed var(--border-hi);
+    border-radius: 3px;
+    padding: 22px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13.5px;
+  }
+  .slots{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px,1fr));
+    gap: 10px;
+  }
+  .slot{
+    background: var(--slot);
+    border-top: 2px solid var(--border-lo);
+    border-left: 2px solid var(--border-lo);
+    border-right: 2px solid var(--border-hi);
+    border-bottom: 2px solid var(--border-hi);
+    border-radius: 2px;
+    padding: 10px 12px;
+    display:flex;
+    gap: 10px;
+    align-items:flex-start;
+  }
+  .slot .icon{
+    width: 34px; height: 34px;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 18px;
+    background: var(--panel-raised);
+    border-radius: 3px;
+    border: 1px solid var(--border-hi);
+    flex-shrink:0;
+  }
+  .slot .meta{ flex:1; min-width:0; }
+  .slot .name{
+    font-weight:700; font-size: 13.5px; color: var(--gold);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .slot .item-id{
+    font-family:'Consolas','JetBrains Mono',monospace;
+    font-size: 11.5px; color: var(--accent2);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .slot .path{
+    font-family:'Consolas','JetBrains Mono',monospace;
+    font-size: 10.5px; color: var(--text-muted);
+    margin-top:2px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .slot .remove{ margin-left:auto; }
+
+  /* ---------- tree preview ---------- */
+  .tree{
+    font-family: 'Consolas','JetBrains Mono',monospace;
+    font-size: 12.5px;
+    background: #151413;
+    border: 1px solid var(--border-lo);
+    border-radius: 3px;
+    padding: 14px 16px;
+    white-space: pre;
+    overflow-x: auto;
+    color: #cfead2;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .tree .dir{ color: var(--accent2); }
+  .tree .file{ color: #cfead2; }
+  .tree .placeholder{ color: var(--gold); }
+
+  details > summary{
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-muted);
+    list-style: none;
+  }
+  details > summary::-webkit-details-marker{ display:none; }
+  details > summary:before{ content: '▸ '; }
+  details[open] > summary:before{ content: '▾ '; }
+
+  footer{
+    text-align:center;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 30px;
+  }
+
+  .toast{
+    position: fixed;
+    bottom: 22px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--accent-dark);
+    color:#0d1f0e;
+    font-weight:700;
+    padding: 10px 18px;
+    border-radius: 4px;
+    font-size: 13.5px;
+    opacity:0;
+    transition: opacity .25s ease, transform .25s ease;
+    pointer-events:none;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">OptiFine · Custom Item Textures</span>
+    <h1>CIT Pack <span class="accent">Creator</span></h1>
+    <p>Trage ein, welches Item mit welchem angezeigten Namen ersetzt werden soll, und lade am Ende eine fertige Resourcepack-Ordnerstruktur herunter. Du musst danach nur noch dein Modell und deine Textur in den passenden Ordner legen.</p>
+  </header>
+
+  <!-- Pack settings -->
+  <section class="panel">
+    <h2>Pack-Einstellungen <span class="n">1</span></h2>
+    <p class="sub">Diese Angaben landen in der <code>pack.mcmeta</code>.</p>
+    <div class="grid cols-3">
+      <div class="field">
+        <label for="packName">Pack-Name</label>
+        <input type="text" id="packName" value="Mein CIT Pack">
+      </div>
+      <div class="field">
+        <label for="packDesc">Beschreibung</label>
+        <input type="text" id="packDesc" value="Custom Item Textures">
+      </div>
+      <div class="field">
+        <label for="packFormat">Pack Format</label>
+        <input type="number" id="packFormat" value="48" min="1">
+        <div class="hint">z. B. 15 (1.20), 34 (1.21), 48 (1.21.4+). OptiFine ist hier meist tolerant — bei Warnung im Spiel einfach anpassen.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Add item form -->
+  <section class="panel">
+    <h2>Item hinzufügen <span class="n">2</span></h2>
+    <p class="sub">Ein Eintrag = ein Item, das bei passendem Namen eine eigene Textur/Modell bekommt.</p>
+
+    <div class="grid cols-2">
+      <div class="field">
+        <label for="itemId">Minecraft Item-ID</label>
+        <input type="text" id="itemId" list="itemList" placeholder="diamond_sword">
+        <div class="hint">Ohne "minecraft:" Präfix, z. B. <code>diamond_sword</code>, <code>stick</code>, <code>leather_chestplate</code></div>
+        <datalist id="itemList"></datalist>
+      </div>
+      <div class="field">
+        <label for="itemName">Angezeigter Name im Spiel</label>
+        <input type="text" id="itemName" placeholder="Excalibur">
+        <div class="hint">Das ist der Name, den du dem Item z. B. im Amboss gibst.</div>
+      </div>
+    </div>
+
+    <div class="grid cols-3" style="margin-top:12px;">
+      <div class="field">
+        <label for="matchType">Namensvergleich</label>
+        <select id="matchType">
+          <option value="exact">Exakt gleich</option>
+          <option value="contains">Enthält Text</option>
+          <option value="iregex">Regex (Groß/Klein egal)</option>
+          <option value="regex">Regex (genau)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="modelType">Modell-Typ</label>
+        <select id="modelType">
+          <option value="generated">Flaches Icon (item/generated)</option>
+          <option value="handheld">Werkzeug/Waffe (item/handheld)</option>
+          <option value="custom">Eigenes 3D-Modell (z. B. Blockbench)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="folderSlug">Ordner-/Dateiname</label>
+        <input type="text" id="folderSlug" placeholder="wird automatisch erzeugt">
+        <div class="hint">Nur a–z, 0–9, _</div>
+      </div>
+    </div>
+
+    <div class="check-row">
+      <input type="checkbox" id="loreEnable">
+      <label for="loreEnable">Zusätzlich nach Lore-Text (1. Zeile) filtern</label>
+    </div>
+    <div class="field" id="loreField" style="display:none; margin-top:8px;">
+      <label for="loreText">Lore-Text (1. Zeile)</label>
+      <input type="text" id="loreText" placeholder="z. B. Legendäre Klinge">
+    </div>
+
+    <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+      <button class="btn btn-accent" id="addBtn">＋ Item hinzufügen</button>
+      <button class="btn" id="clearFormBtn">Formular leeren</button>
+    </div>
+  </section>
+
+  <!-- Inventory of added items -->
+  <section class="panel">
+    <h2>Deine Einträge <span class="n" id="countBadge">0</span></h2>
+    <p class="sub">Diese Items werden beim Erstellen ins Pack aufgenommen.</p>
+    <div id="emptyState" class="empty-state">Noch keine Einträge — füge oben dein erstes Item hinzu.</div>
+    <div id="slots" class="slots" style="display:none;"></div>
+  </section>
+
+  <!-- Preview -->
+  <section class="panel">
+    <details id="previewDetails">
+      <summary>Ordnerstruktur-Vorschau anzeigen</summary>
+      <div class="tree" id="treeView" style="margin-top:12px;"></div>
+    </details>
+  </section>
+
+  <!-- Generate -->
+  <section class="panel">
+    <h2>Pack erstellen <span class="n">3</span></h2>
+    <p class="sub">Lädt ein ZIP mit fertiger Ordnerstruktur, Properties- und Platzhalter-Modell-Dateien herunter. Du musst danach nur noch <code>model.json</code> (dein eigenes Modell) und <code>texture.png</code> in den jeweiligen Ordner legen.</p>
+    <button class="btn btn-accent btn-big" id="downloadBtn" disabled>📦 Pack generieren &amp; herunterladen</button>
+  </section>
+
+  <footer>
+    Erstellt Dateien für OptiFine's Custom Item Textures (CIT). Benötigt OptiFine im Spiel &amp; aktivierte "Custom Items" in den Videoeinstellungen.
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const COMMON_ITEMS = [
+  "diamond_sword","netherite_sword","iron_sword","golden_sword","wooden_sword","stone_sword",
+  "diamond_pickaxe","netherite_pickaxe","iron_pickaxe","golden_pickaxe","wooden_pickaxe","stone_pickaxe",
+  "diamond_axe","netherite_axe","iron_axe","golden_axe","wooden_axe","stone_axe",
+  "diamond_shovel","netherite_shovel","iron_shovel",
+  "diamond_hoe","netherite_hoe","iron_hoe",
+  "bow","crossbow","trident","shield","fishing_rod",
+  "diamond_helmet","diamond_chestplate","diamond_leggings","diamond_boots",
+  "netherite_helmet","netherite_chestplate","netherite_leggings","netherite_boots",
+  "iron_helmet","iron_chestplate","iron_leggings","iron_boots",
+  "leather_helmet","leather_chestplate","leather_leggings","leather_boots",
+  "golden_helmet","golden_chestplate","golden_leggings","golden_boots",
+  "elytra","turtle_helmet",
+  "stick","bone","blaze_rod","nether_star","totem_of_undying",
+  "apple","golden_apple","enchanted_golden_apple","potion","splash_potion","lingering_potion",
+  "player_head","zombie_head","skeleton_skull","wither_skeleton_skull",
+  "book","enchanted_book","written_book","map","compass","clock",
+  "iron_ingot","gold_ingot","diamond","emerald","nether_star","amethyst_shard"
+];
+
+const ICONS = [
+  { test:/sword|blade|excalibur/i, icon:"⚔️" },
+  { test:/pickaxe/i, icon:"⛏️" },
+  { test:/axe/i, icon:"🪓" },
+  { test:/bow|crossbow/i, icon:"🏹" },
+  { test:/shield/i, icon:"🛡️" },
+  { test:/helmet|chestplate|leggings|boots|armor|elytra/i, icon:"🛡️" },
+  { test:/potion/i, icon:"🧪" },
+  { test:/head|skull/i, icon:"💀" },
+  { test:/apple|food|carrot|bread|beef|porkchop|chicken|fish/i, icon:"🍎" },
+  { test:/book/i, icon:"📖" },
+  { test:/totem/i, icon:"🗿" },
+  { test:/star|nether_star/i, icon:"✨" },
+  { test:/stick|rod/i, icon:"🪵" },
+  { test:/ingot|diamond|emerald|gold|iron|amethyst/i, icon:"💎" },
+];
+function iconFor(id){
+  for(const rule of ICONS){ if(rule.test.test(id)) return rule.icon; }
+  return "📦";
+}
+
+const itemList = document.getElementById('itemList');
+COMMON_ITEMS.forEach(id=>{
+  const opt = document.createElement('option');
+  opt.value = id;
+  itemList.appendChild(opt);
+});
+
+let entries = [];
+let counter = 0;
+
+const $ = (id)=>document.getElementById(id);
+
+function slugify(str){
+  return (str||"")
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // strip accents
+    .replace(/[^a-z0-9]+/g,'_')
+    .replace(/^_+|_+$/g,'')
+    .slice(0,40) || "item";
+}
+
+function uniqueSlug(base){
+  let slug = base, i = 2;
+  const used = new Set(entries.map(e=>e.folder));
+  while(used.has(slug)){ slug = base + "_" + i; i++; }
+  return slug;
+}
+
+$('itemName').addEventListener('input', ()=>{
+  if(!$('folderSlug').dataset.touched){
+    $('folderSlug').value = slugify($('itemName').value);
+  }
+});
+$('folderSlug').addEventListener('input', ()=>{ $('folderSlug').dataset.touched = "1"; });
+
+$('loreEnable').addEventListener('change', (e)=>{
+  $('loreField').style.display = e.target.checked ? 'block' : 'none';
+});
+
+$('clearFormBtn').addEventListener('click', ()=>{
+  $('itemId').value = "";
+  $('itemName').value = "";
+  $('folderSlug').value = "";
+  $('folderSlug').dataset.touched = "";
+  $('loreText').value = "";
+  $('loreEnable').checked = false;
+  $('loreField').style.display = 'none';
+  $('matchType').value = "exact";
+  $('modelType').value = "generated";
+});
+
+function showToast(msg){
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+$('addBtn').addEventListener('click', ()=>{
+  const itemId = $('itemId').value.trim().replace(/^minecraft:/,'');
+  const name = $('itemName').value.trim();
+  const matchType = $('matchType').value;
+  const modelType = $('modelType').value;
+  const loreEnabled = $('loreEnable').checked;
+  const lore = $('loreText').value.trim();
+
+  if(!itemId){ showToast("⚠️ Bitte eine Item-ID angeben"); $('itemId').focus(); return; }
+  if(!name){ showToast("⚠️ Bitte einen Namen angeben"); $('itemName').focus(); return; }
+
+  let folder = slugify($('folderSlug').value || name);
+  folder = uniqueSlug(folder);
+
+  entries.push({
+    id: ++counter,
+    itemId, name, matchType, modelType, folder,
+    lore: (loreEnabled && lore) ? lore : null
+  });
+
+  render();
+  showToast("✅ Hinzugefügt: " + name);
+  $('clearFormBtn').click();
+});
+
+function removeEntry(id){
+  entries = entries.filter(e=>e.id!==id);
+  render();
+}
+
+function render(){
+  $('countBadge').textContent = entries.length;
+  const slotsEl = $('slots');
+  const emptyEl = $('emptyState');
+  if(entries.length === 0){
+    slotsEl.style.display = 'none';
+    emptyEl.style.display = 'block';
+  } else {
+    slotsEl.style.display = 'grid';
+    emptyEl.style.display = 'none';
+    slotsEl.innerHTML = entries.map(e=>`
+      <div class="slot">
+        <div class="icon">${iconFor(e.itemId)}</div>
+        <div class="meta">
+          <div class="name">${escapeHtml(e.name)}</div>
+          <div class="item-id">${escapeHtml(e.itemId)}</div>
+          <div class="path">optifine/cit/${escapeHtml(e.folder)}/</div>
+        </div>
+        <button class="btn-danger remove" data-id="${e.id}" title="Entfernen">✕</button>
+      </div>
+    `).join('');
+    slotsEl.querySelectorAll('.remove').forEach(btn=>{
+      btn.addEventListener('click', ()=> removeEntry(Number(btn.dataset.id)));
+    });
+  }
+  $('downloadBtn').disabled = entries.length === 0;
+  renderTree();
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function renderTree(){
+  const packName = $('packName').value.trim() || "CIT Pack";
+  let lines = [];
+  lines.push(`<span class="dir">${escapeHtml(packName)}/</span>`);
+  lines.push(`├── <span class="file">pack.mcmeta</span>`);
+  lines.push(`├── <span class="file">ANLEITUNG.txt</span>`);
+  lines.push(`└── <span class="dir">assets/minecraft/optifine/cit/</span>`);
+  entries.forEach((e,i)=>{
+    const last = i === entries.length-1;
+    const branch = last ? "└──" : "├──";
+    const pipe = last ? "    " : "│   ";
+    lines.push(`    ${branch} <span class="dir">${escapeHtml(e.folder)}/</span>`);
+    lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.folder)}.properties</span>`);
+    lines.push(`    ${pipe}   ├── <span class="placeholder">model.json</span>  <span style="color:#8a8a86">← eigenes Modell hier rein</span>`);
+    lines.push(`    ${pipe}   ├── <span class="placeholder">texture.png</span> <span style="color:#8a8a86">← eigene Textur hier rein</span>`);
+    lines.push(`    ${pipe}   └── <span class="file">ANLEITUNG.txt</span>`);
+  });
+  $('treeView').innerHTML = lines.join("\n");
+}
+
+function matchValue(matchType, name){
+  switch(matchType){
+    case "contains": return "ipattern:*" + name + "*";
+    case "iregex": return "iregex:" + name;
+    case "regex": return "regex:" + name;
+    default: return name;
+  }
+}
+
+function modelJson(modelType){
+  if(modelType === "handheld"){
+    return {
+      parent: "item/handheld",
+      textures: { layer0: "./texture" }
+    };
+  }
+  if(modelType === "custom"){
+    return {
+      "_hinweis": "Ersetze diese komplette Datei mit deinem eigenen 3D-Modell (z. B. aus Blockbench exportiert). Texturen im gleichen Ordner koennen als './texture' oder vollstaendiger Pfad referenziert werden.",
+      parent: "item/generated",
+      textures: { layer0: "./texture" }
+    };
+  }
+  return {
+    parent: "item/generated",
+    textures: { layer0: "./texture" }
+  };
+}
+
+function propertiesContent(e){
+  let lines = [];
+  lines.push("# Automatisch generiert mit dem CIT Pack Creator");
+  lines.push("type=item");
+  lines.push("items=" + e.itemId);
+  lines.push("nbt.display.Name=" + matchValue(e.matchType, e.name));
+  if(e.lore){
+    lines.push("nbt.display.Lore.0=" + e.lore);
+  }
+  lines.push("model=./model");
+  return lines.join("\n") + "\n";
+}
+
+function folderReadme(e){
+  return [
+    `Anleitung für: ${e.name} (${e.itemId})`,
+    "".padEnd(40,"-"),
+    "",
+    "1. Dein 3D-Modell (z. B. aus Blockbench exportiert) hier als 'model.json'",
+    "   ablegen — die vorhandene Platzhalter-Datei einfach überschreiben.",
+    "",
+    "2. Deine Textur hier als 'texture.png' ablegen.",
+    "   (Wenn dein Modell die Textur anders referenziert, passe den",
+    "   Pfad in 'model.json' entsprechend an.)",
+    "",
+    "3. Fertig! Die 'model.json' verweist bereits per './texture' auf",
+    "   die Datei in diesem Ordner — du musst sonst nichts ändern.",
+    "",
+    `Zugehörige Properties-Datei: ${e.folder}.properties`
+  ].join("\n") + "\n";
+}
+
+function mainReadme(){
+  const lines = [
+    "CIT PACK — ANLEITUNG",
+    "".padEnd(40,"="),
+    "",
+    "Dieses Resourcepack nutzt OptiFine's 'Custom Item Textures' (CIT).",
+    "Voraussetzung: OptiFine ist installiert und 'Custom Items' ist unter",
+    "Video-Einstellungen -> Qualität aktiviert.",
+    "",
+    "SO GEHT'S:",
+    "",
+    "1. Diesen Ordner (oder das ZIP direkt) nach",
+    "   .minecraft/resourcepacks/ kopieren.",
+    "",
+    "2. Für jedes Item in assets/minecraft/optifine/cit/<ordner>/:",
+    "   - 'model.json' durch dein eigenes Modell ersetzen",
+    "     (z. B. Export aus Blockbench, Format: Minecraft Item Model)",
+    "   - 'texture.png' durch deine eigene Textur ersetzen",
+    "   (Details dazu stehen jeweils in der ANLEITUNG.txt im Ordner.)",
+    "",
+    "3. Resourcepack im Spiel aktivieren.",
+    "",
+    "ENTHALTENE ITEMS:",
+    ""
+  ];
+  entries.forEach(e=>{
+    lines.push(`- ${e.name}  (Item: ${e.itemId}, Ordner: assets/minecraft/optifine/cit/${e.folder}/)`);
+  });
+  lines.push("");
+  lines.push("Tipp: Mehrere Namens-Varianten für dasselbe Item? Einfach mehrmals");
+  lines.push("mit unterschiedlichem Namen/Ordner hinzufügen und neu exportieren.");
+  return lines.join("\n") + "\n";
+}
+
+$('downloadBtn').addEventListener('click', async ()=>{
+  if(entries.length === 0) return;
+  const btn = $('downloadBtn');
+  const originalText = btn.textContent;
+  btn.textContent = "⏳ Erstelle ZIP...";
+  btn.disabled = true;
+  try{
+    const zip = new JSZip();
+    const packName = $('packName').value.trim() || "CIT Pack";
+    const packDesc = $('packDesc').value.trim() || "Custom Item Textures";
+    const packFormat = parseInt($('packFormat').value, 10) || 48;
+    const root = zip.folder(packName);
+
+    root.file("pack.mcmeta", JSON.stringify({
+      pack: { pack_format: packFormat, description: packDesc }
+    }, null, 2));
+
+    root.file("ANLEITUNG.txt", mainReadme());
+
+    const citRoot = root.folder("assets").folder("minecraft").folder("optifine").folder("cit");
+    entries.forEach(e=>{
+      const f = citRoot.folder(e.folder);
+      f.file(e.folder + ".properties", propertiesContent(e));
+      f.file("model.json", JSON.stringify(modelJson(e.modelType), null, 2));
+      f.file("ANLEITUNG.txt", folderReadme(e));
+    });
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = slugify(packName) + ".zip";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    showToast("📦 Pack heruntergeladen!");
+  } catch(err){
+    console.error(err);
+    showToast("❌ Fehler beim Erstellen — siehe Konsole");
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = entries.length === 0;
+  }
+});
+
+$('packName').addEventListener('input', renderTree);
+
+render();
+</script>
+</body>
+</html>
