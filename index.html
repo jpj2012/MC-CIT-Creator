@@ -341,7 +341,9 @@
       </div>
       <div class="field">
         <label for="packFormat">Pack Format</label>
-        <input type="number" id="packFormat" value="48" min="1">
+        <input type="text" inputmode="numeric" id="packFormat" value="48" list="packFormatList" autocomplete="off">
+        <datalist id="packFormatList"></datalist>
+        <div class="hint">Frei eingeben oder aus der Liste wählen.</div>
         <div class="hint">z. B. 15 (1.20), 34 (1.21), 48 (1.21.4+). OptiFine ist hier meist tolerant — bei Warnung im Spiel einfach anpassen.</div>
       </div>
     </div>
@@ -392,12 +394,12 @@
     </div>
 
     <div class="grid cols-2" style="margin-top:12px;">
-      <div class="field">
-        <label for="textureUpload">Eigene Textur (.png)</label>
+      <div class="field" id="textureUploadField">
+        <label for="textureUpload" id="textureUploadLabel">Eigene Textur (.png)</label>
         <input type="file" id="textureUpload" accept="image/png,.png">
-        <div class="hint">Optional — wird direkt anstelle des Platzhalters in den Ordner gelegt.</div>
+        <div class="hint" id="textureUploadHint">Optional — wird direkt anstelle des Platzhalters in den Ordner gelegt.</div>
       </div>
-      <div class="field">
+      <div class="field" id="modelUploadField" style="display:none;">
         <label for="modelUpload">Eigenes Modell (.json)</label>
         <input type="file" id="modelUpload" accept="application/json,.json">
         <div class="hint">Optional — die <code>.properties</code> zeigt dann automatisch auf diesen Dateinamen.</div>
@@ -498,6 +500,42 @@ COMMON_ITEMS.forEach(id=>{
   itemList.appendChild(opt);
 });
 
+// Java-Edition-Version -> Resourcepack-pack_format
+const PACK_FORMATS = [
+  { format: 88, versions: "26.2 (aktuellste)" },
+  { format: 84, versions: "26.1 – 26.1.2" },
+  { format: 75, versions: "1.21.11" },
+  { format: 69, versions: "1.21.9 – 1.21.10" },
+  { format: 64, versions: "1.21.7 – 1.21.8" },
+  { format: 63, versions: "1.21.6" },
+  { format: 55, versions: "1.21.5" },
+  { format: 46, versions: "1.21.4" },
+  { format: 42, versions: "1.21.2 – 1.21.3" },
+  { format: 34, versions: "1.21 – 1.21.1" },
+  { format: 32, versions: "1.20.5 – 1.20.6" },
+  { format: 22, versions: "1.20.3 – 1.20.4" },
+  { format: 18, versions: "1.20.2" },
+  { format: 15, versions: "1.20 – 1.20.1" },
+  { format: 13, versions: "1.19.4" },
+  { format: 12, versions: "1.19.3" },
+  { format: 9, versions: "1.19 – 1.19.2" },
+  { format: 8, versions: "1.18 – 1.18.2" },
+  { format: 7, versions: "1.17 – 1.17.1" },
+  { format: 6, versions: "1.16.2 – 1.16.5" },
+  { format: 5, versions: "1.15 – 1.16.1" },
+  { format: 4, versions: "1.13 – 1.14.4" },
+  { format: 3, versions: "1.11 – 1.12.2" },
+  { format: 2, versions: "1.9 – 1.10.2" },
+  { format: 1, versions: "1.6.1 – 1.8.9" }
+];
+const packFormatList = document.getElementById('packFormatList');
+PACK_FORMATS.forEach(pf=>{
+  const opt = document.createElement('option');
+  opt.value = pf.format;
+  opt.label = `${pf.format} — Minecraft ${pf.versions}`;
+  packFormatList.appendChild(opt);
+});
+
 let entries = [];
 let counter = 0;
 
@@ -530,6 +568,37 @@ $('loreEnable').addEventListener('change', (e)=>{
   $('loreField').style.display = e.target.checked ? 'block' : 'none';
 });
 
+const UPLOAD_LABELS = {
+  generated: {
+    label: "Eigenes Icon (.png)",
+    hint: "Optional — flache Icon-Textur, wird direkt anstelle des Platzhalters in den Ordner gelegt."
+  },
+  handheld: {
+    label: "Eigene Werkzeug-Textur (.png)",
+    hint: "Optional — Textur fürs Werkzeug/Waffe, wird direkt anstelle des Platzhalters in den Ordner gelegt."
+  },
+  custom: {
+    label: "Eigene Textur (.png)",
+    hint: "Optional — nur nötig, falls dein Modell eine externe Textur referenziert."
+  }
+};
+
+function updateUploadFields(){
+  const type = $('modelType').value;
+  const cfg = UPLOAD_LABELS[type] || UPLOAD_LABELS.generated;
+  $('textureUploadLabel').textContent = cfg.label;
+  $('textureUploadHint').textContent = cfg.hint;
+
+  const showModelUpload = (type === "custom");
+  $('modelUploadField').style.display = showModelUpload ? 'block' : 'none';
+  if(!showModelUpload){
+    $('modelUpload').value = "";
+  }
+}
+
+$('modelType').addEventListener('change', updateUploadFields);
+updateUploadFields();
+
 $('clearFormBtn').addEventListener('click', ()=>{
   $('itemId').value = "";
   $('itemName').value = "";
@@ -542,6 +611,7 @@ $('clearFormBtn').addEventListener('click', ()=>{
   $('modelType').value = "generated";
   $('textureUpload').value = "";
   $('modelUpload').value = "";
+  updateUploadFields();
 });
 
 function baseName(filename){
