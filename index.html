@@ -129,6 +129,34 @@
     outline: 2px solid var(--accent2);
     outline-offset: 1px;
   }
+  input[type=file]{
+    width: 100%;
+    background: var(--slot);
+    border-top: 2px solid var(--border-lo);
+    border-left: 2px solid var(--border-lo);
+    border-right: 2px solid var(--border-hi);
+    border-bottom: 2px solid var(--border-hi);
+    color: var(--text-muted);
+    font-family: 'Consolas','JetBrains Mono',monospace;
+    font-size: 12.5px;
+    padding: 7px 8px;
+    border-radius: 2px;
+  }
+  input[type=file]::file-selector-button{
+    background: var(--panel-raised);
+    border: 1px solid var(--border-hi);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    padding: 5px 9px;
+    border-radius: 2px;
+    margin-right: 8px;
+    cursor: pointer;
+  }
+  input[type=file]::file-selector-button:hover{ filter: brightness(1.15); }
   .field{ margin-bottom: 2px; }
   .hint{ font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
   .check-row{ display:flex; align-items:center; gap:8px; margin-top: 4px;}
@@ -363,6 +391,19 @@
       </div>
     </div>
 
+    <div class="grid cols-2" style="margin-top:12px;">
+      <div class="field">
+        <label for="textureUpload">Eigene Textur (.png)</label>
+        <input type="file" id="textureUpload" accept="image/png,.png">
+        <div class="hint">Optional — wird direkt anstelle des Platzhalters in den Ordner gelegt.</div>
+      </div>
+      <div class="field">
+        <label for="modelUpload">Eigenes Modell (.json)</label>
+        <input type="file" id="modelUpload" accept="application/json,.json">
+        <div class="hint">Optional — die <code>.properties</code> zeigt dann automatisch auf diesen Dateinamen.</div>
+      </div>
+    </div>
+
     <div class="check-row">
       <input type="checkbox" id="loreEnable">
       <label for="loreEnable">Zusätzlich nach Lore-Text (1. Zeile) filtern</label>
@@ -499,7 +540,14 @@ $('clearFormBtn').addEventListener('click', ()=>{
   $('loreField').style.display = 'none';
   $('matchType').value = "exact";
   $('modelType').value = "generated";
+  $('textureUpload').value = "";
+  $('modelUpload').value = "";
 });
+
+function baseName(filename){
+  const withoutExt = filename.replace(/\.[^/.]+$/, "");
+  return withoutExt || "model";
+}
 
 function showToast(msg){
   const t = $('toast');
@@ -523,10 +571,16 @@ $('addBtn').addEventListener('click', ()=>{
   let folder = slugify($('folderSlug').value || name);
   folder = uniqueSlug(folder);
 
+  const textureFile = $('textureUpload').files[0] || null;
+  const modelFile = $('modelUpload').files[0] || null;
+
   entries.push({
     id: ++counter,
     itemId, name, matchType, modelType, folder,
-    lore: (loreEnabled && lore) ? lore : null
+    lore: (loreEnabled && lore) ? lore : null,
+    textureFile,
+    modelFile,
+    modelBaseName: modelFile ? baseName(modelFile.name) : "model"
   });
 
   render();
@@ -549,17 +603,26 @@ function render(){
   } else {
     slotsEl.style.display = 'grid';
     emptyEl.style.display = 'none';
-    slotsEl.innerHTML = entries.map(e=>`
+    slotsEl.innerHTML = entries.map(e=>{
+      const uploads = [];
+      if(e.modelFile) uploads.push("📐 " + escapeHtml(e.modelFile.name));
+      if(e.textureFile) uploads.push("🖼️ " + escapeHtml(e.textureFile.name));
+      const uploadsHtml = uploads.length
+        ? `<div class="path" style="color: var(--accent);">${uploads.join(" · ")}</div>`
+        : "";
+      return `
       <div class="slot">
         <div class="icon">${iconFor(e.itemId)}</div>
         <div class="meta">
           <div class="name">${escapeHtml(e.name)}</div>
           <div class="item-id">${escapeHtml(e.itemId)}</div>
           <div class="path">optifine/cit/${escapeHtml(e.folder)}/</div>
+          ${uploadsHtml}
         </div>
         <button class="btn-danger remove" data-id="${e.id}" title="Entfernen">✕</button>
       </div>
-    `).join('');
+    `;
+    }).join('');
     slotsEl.querySelectorAll('.remove').forEach(btn=>{
       btn.addEventListener('click', ()=> removeEntry(Number(btn.dataset.id)));
     });
@@ -585,8 +648,16 @@ function renderTree(){
     const pipe = last ? "    " : "│   ";
     lines.push(`    ${branch} <span class="dir">${escapeHtml(e.folder)}/</span>`);
     lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.folder)}.properties</span>`);
-    lines.push(`    ${pipe}   ├── <span class="placeholder">model.json</span>  <span style="color:#8a8a86">← eigenes Modell hier rein</span>`);
-    lines.push(`    ${pipe}   ├── <span class="placeholder">texture.png</span> <span style="color:#8a8a86">← eigene Textur hier rein</span>`);
+    if(e.modelFile){
+      lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.modelFile.name)}</span>  <span style="color:#8a8a86">← hochgeladen</span>`);
+    } else {
+      lines.push(`    ${pipe}   ├── <span class="placeholder">model.json</span>  <span style="color:#8a8a86">← eigenes Modell hier rein</span>`);
+    }
+    if(e.textureFile){
+      lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.textureFile.name)}</span> <span style="color:#8a8a86">← hochgeladen</span>`);
+    } else {
+      lines.push(`    ${pipe}   ├── <span class="placeholder">texture.png</span> <span style="color:#8a8a86">← eigene Textur hier rein</span>`);
+    }
     lines.push(`    ${pipe}   └── <span class="file">ANLEITUNG.txt</span>`);
   });
   $('treeView').innerHTML = lines.join("\n");
@@ -630,27 +701,53 @@ function propertiesContent(e){
   if(e.lore){
     lines.push("nbt.display.Lore.0=" + e.lore);
   }
-  lines.push("model=./model");
+  lines.push("model=./" + (e.modelBaseName || "model"));
   return lines.join("\n") + "\n";
 }
 
 function folderReadme(e){
-  return [
+  const lines = [
     `Anleitung für: ${e.name} (${e.itemId})`,
     "".padEnd(40,"-"),
-    "",
-    "1. Dein 3D-Modell (z. B. aus Blockbench exportiert) hier als 'model.json'",
-    "   ablegen — die vorhandene Platzhalter-Datei einfach überschreiben.",
-    "",
-    "2. Deine Textur hier als 'texture.png' ablegen.",
-    "   (Wenn dein Modell die Textur anders referenziert, passe den",
-    "   Pfad in 'model.json' entsprechend an.)",
-    "",
-    "3. Fertig! Die 'model.json' verweist bereits per './texture' auf",
-    "   die Datei in diesem Ordner — du musst sonst nichts ändern.",
-    "",
-    `Zugehörige Properties-Datei: ${e.folder}.properties`
-  ].join("\n") + "\n";
+    ""
+  ];
+  let step = 1;
+
+  if(e.modelFile){
+    lines.push(`${step}. Dein Modell '${e.modelFile.name}' liegt bereits in diesem Ordner`);
+    lines.push(`   und wird in der .properties per 'model=./${e.modelBaseName}' referenziert.`);
+    lines.push("");
+    step++;
+  } else {
+    lines.push(`${step}. Dein 3D-Modell (z. B. aus Blockbench exportiert) hier als 'model.json'`);
+    lines.push("   ablegen — die vorhandene Platzhalter-Datei einfach überschreiben.");
+    lines.push("");
+    step++;
+  }
+
+  if(e.textureFile){
+    lines.push(`${step}. Deine Textur '${e.textureFile.name}' liegt bereits in diesem Ordner.`);
+    lines.push("   Falls dein Modell sie unter einem anderen Pfad erwartet, benenne");
+    lines.push("   die Datei entsprechend um oder passe den Pfad im Modell an.");
+    lines.push("");
+    step++;
+  } else {
+    lines.push(`${step}. Deine Textur hier als 'texture.png' ablegen.`);
+    lines.push("   (Wenn dein Modell die Textur anders referenziert, passe den");
+    lines.push("   Pfad im Modell entsprechend an.)");
+    lines.push("");
+    step++;
+  }
+
+  if(e.modelFile && e.textureFile){
+    lines.push(`${step}. Fertig! Beide Dateien liegen bereits hier — du musst sonst nichts ändern.`);
+  } else {
+    lines.push(`${step}. Sobald beide Dateien vorhanden sind, ist der Eintrag einsatzbereit.`);
+  }
+  lines.push("");
+  lines.push(`Zugehörige Properties-Datei: ${e.folder}.properties`);
+
+  return lines.join("\n") + "\n";
 }
 
 function mainReadme(){
@@ -710,7 +807,17 @@ $('downloadBtn').addEventListener('click', async ()=>{
     entries.forEach(e=>{
       const f = citRoot.folder(e.folder);
       f.file(e.folder + ".properties", propertiesContent(e));
-      f.file("model.json", JSON.stringify(modelJson(e.modelType), null, 2));
+
+      if(e.modelFile){
+        f.file(e.modelFile.name, e.modelFile);
+      } else {
+        f.file("model.json", JSON.stringify(modelJson(e.modelType), null, 2));
+      }
+
+      if(e.textureFile){
+        f.file(e.textureFile.name, e.textureFile);
+      }
+
       f.file("ANLEITUNG.txt", folderReadme(e));
     });
 
