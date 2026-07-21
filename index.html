@@ -355,6 +355,7 @@
       <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
         <button class="btn btn-accent" id="ghConnectBtn">🔗 Verbinden</button>
         <button class="btn" id="ghPingBtn">🧪 PUT-Verbindung testen</button>
+        <button class="btn" id="ghBigPingBtn">🧪 Große Testdaten (~700 KB) senden</button>
         <span class="hint" id="ghStatus">Nicht verbunden.</span>
       </div>
       <div id="ghPingResult" class="hint" style="margin-top:6px;"></div>
@@ -1123,6 +1124,34 @@ $('ghConnectBtn').addEventListener('click', async ()=>{
 $('refreshSavedBtn').addEventListener('click', ()=>{
   if(!ghState.connected){ showToast("⚠️ Erst mit dem Worker verbinden"); return; }
   refreshSavedPacks();
+});
+
+$('ghBigPingBtn').addEventListener('click', async ()=>{
+  const workerUrl = $('workerUrl').value.trim();
+  const resultEl = $('ghPingResult');
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
+    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
+    return;
+  }
+  const bigString = "x".repeat(700 * 1024); // ~700 KB Testdaten, keine GitHub-Beteiligung
+  resultEl.textContent = "Sende ~700 KB Testdaten an /ping...";
+  const t0 = performance.now();
+  try{
+    const base = workerUrl.replace(/\/+$/,'');
+    const res = await fetch(base + "/ping", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ big: bigString })
+    });
+    const ms = Math.round(performance.now() - t0);
+    resultEl.textContent = res.ok
+      ? `✅ 700-KB-Test erfolgreich in ${ms} ms — reines Netzwerk/Worker ist also NICHT das Problem.`
+      : `⚠️ 700-KB-Test antwortete mit Status ${res.status} nach ${ms} ms.`;
+  } catch(err){
+    const ms = Math.round(performance.now() - t0);
+    console.error(err);
+    resultEl.textContent = `❌ 700-KB-Test fehlgeschlagen nach ${ms} ms: ${String(err.message || err)} — das ist ein reines Netzwerk-/Verbindungsproblem, unabhängig von GitHub oder meinem Worker-Code.`;
+  }
 });
 
 $('ghPingBtn').addEventListener('click', async ()=>{
