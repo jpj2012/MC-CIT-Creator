@@ -475,6 +475,10 @@
     <h2>Pack erstellen <span class="n">3</span></h2>
     <p class="sub">Lädt ein ZIP mit fertiger Ordnerstruktur, Properties- und Platzhalter-Modell-Dateien herunter. Du musst danach nur noch <code>model.json</code> (dein eigenes Modell) und <code>texture.png</code> in den jeweiligen Ordner legen. Bei aktiver GitHub-Verbindung wird das Pack zusätzlich dort gesichert.</p>
     <button class="btn btn-accent btn-big" id="downloadBtn" disabled>📦 Pack generieren &amp; herunterladen</button>
+    <div id="syncErrorBox" style="display:none; margin-top:12px; padding:10px 12px; border:1px solid var(--danger); border-radius:3px; background:rgba(209,83,60,0.1);">
+      <div style="font-weight:700; color:var(--danger); font-size:12.5px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px;">⚠️ Worker-Sync fehlgeschlagen — Details</div>
+      <div id="syncErrorText" style="font-family:'Consolas','JetBrains Mono',monospace; font-size:11.5px; color:var(--text); white-space:pre-wrap; word-break:break-word;"></div>
+    </div>
   </section>
 
   <footer>
@@ -1169,6 +1173,7 @@ $('downloadBtn').addEventListener('click', async ()=>{
     showToast("📦 Pack heruntergeladen!");
 
     if(ghState.connected){
+      $('syncErrorBox').style.display = "none";
       try{
         btn.textContent = "☁️ Speichere über Worker...";
         const projectData = serializeProject();
@@ -1182,6 +1187,8 @@ $('downloadBtn').addEventListener('click', async ()=>{
       } catch(err){
         console.error(err);
         showToast("⚠️ Lokal gespeichert, aber Worker-Sync fehlgeschlagen");
+        $('syncErrorText').textContent = String(err.message || err);
+        $('syncErrorBox').style.display = "block";
       }
     }
   } catch(err){
