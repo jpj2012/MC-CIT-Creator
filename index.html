@@ -485,6 +485,8 @@
 <div class="toast" id="toast"></div>
 
 <script>
+const $ = (id)=>document.getElementById(id);
+
 const COMMON_ITEMS = [
   "diamond_sword","netherite_sword","iron_sword","golden_sword","wooden_sword","stone_sword",
   "diamond_pickaxe","netherite_pickaxe","iron_pickaxe","golden_pickaxe","wooden_pickaxe","stone_pickaxe",
@@ -610,8 +612,6 @@ $('packFormat').addEventListener('input', updatePackFormatHint);
 
 let entries = [];
 let counter = 0;
-
-const $ = (id)=>document.getElementById(id);
 
 function slugify(str){
   return (str||"")
