@@ -354,8 +354,10 @@
       </div>
       <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
         <button class="btn btn-accent" id="ghConnectBtn">🔗 Verbinden</button>
+        <button class="btn" id="ghPingBtn">🧪 PUT-Verbindung testen</button>
         <span class="hint" id="ghStatus">Nicht verbunden.</span>
       </div>
+      <div id="ghPingResult" class="hint" style="margin-top:6px;"></div>
     </details>
   </section>
 
@@ -1108,6 +1110,33 @@ $('ghConnectBtn').addEventListener('click', async ()=>{
 $('refreshSavedBtn').addEventListener('click', ()=>{
   if(!ghState.connected){ showToast("⚠️ Erst mit dem Worker verbinden"); return; }
   refreshSavedPacks();
+});
+
+$('ghPingBtn').addEventListener('click', async ()=>{
+  const workerUrl = $('workerUrl').value.trim();
+  const resultEl = $('ghPingResult');
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
+    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
+    return;
+  }
+  resultEl.textContent = "Teste GET /ping...";
+  try{
+    const base = workerUrl.replace(/\/+$/,'');
+    const getRes = await fetch(base + "/ping", { method: "GET" });
+    const getOk = getRes.ok;
+    resultEl.textContent = `GET /ping: ${getOk ? "✅ OK" : "❌ " + getRes.status} — teste PUT /ping...`;
+
+    const putRes = await fetch(base + "/ping", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ test: true })
+    });
+    const putText = await putRes.text();
+    resultEl.textContent = `GET /ping: ${getOk ? "✅ OK" : "❌ " + getRes.status} | PUT /ping: ${putRes.ok ? "✅ OK" : "❌ " + putRes.status} — ${putText}`;
+  } catch(err){
+    console.error(err);
+    resultEl.textContent = "❌ Fehler: " + String(err.message || err) + " (das ist der reine Netzwerk-/CORS-Fehler, ganz ohne GitHub-Beteiligung)";
+  }
 });
 
 $('projectSelect').addEventListener('change', async ()=>{
