@@ -1014,15 +1014,28 @@ async function workerGetPack(name){
   return res.json();
 }
 
-async function workerSavePack(name, project, zipBase64){
+async function workerSaveProject(name, project){
   const res = await workerFetch("/packs", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, project, zipBase64 })
+    body: JSON.stringify({ name, project })
   });
   if(!res.ok){
     const errText = await res.text().catch(()=> "");
-    throw new Error(`Speichern fehlgeschlagen (${res.status}): ${errText}`);
+    throw new Error(`Projekt speichern fehlgeschlagen (${res.status}): ${errText}`);
+  }
+  return res.json();
+}
+
+async function workerSaveZip(name, blob){
+  const res = await workerFetch("/packs/" + encodeURIComponent(name) + "/zip", {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: blob
+  });
+  if(!res.ok){
+    const errText = await res.text().catch(()=> "");
+    throw new Error(`ZIP speichern fehlgeschlagen (${res.status}): ${errText}`);
   }
   return res.json();
 }
@@ -1203,12 +1216,15 @@ $('downloadBtn').addEventListener('click', async ()=>{
 
     if(ghState.connected){
       $('syncErrorBox').style.display = "none";
+      const projectData = serializeProject();
+      const projectSizeKb = Math.round(JSON.stringify(projectData).length / 1024);
+      const zipSizeKb = Math.round(blob.size / 1024);
       try{
-        btn.textContent = "☁️ Speichere über Worker...";
-        const projectData = serializeProject();
-        const zipBase64 = await arrayBufferToBase64(await blob.arrayBuffer());
+        btn.textContent = "☁️ Speichere Projekt-Daten...";
+        await workerSaveProject(packName, projectData);
 
-        await workerSavePack(packName, projectData, zipBase64);
+        btn.textContent = "☁️ Speichere ZIP...";
+        await workerSaveZip(packName, blob);
 
         await refreshSavedPacks();
         $('projectSelect').value = packName;
@@ -1216,7 +1232,9 @@ $('downloadBtn').addEventListener('click', async ()=>{
       } catch(err){
         console.error(err);
         showToast("⚠️ Lokal gespeichert, aber Worker-Sync fehlgeschlagen");
-        $('syncErrorText').textContent = String(err.message || err);
+        $('syncErrorText').textContent =
+          String(err.message || err) +
+          `\n\n(Projekt-Daten: ~${projectSizeKb} KB, ZIP: ~${zipSizeKb} KB)`;
         $('syncErrorBox').style.display = "block";
       }
     }
