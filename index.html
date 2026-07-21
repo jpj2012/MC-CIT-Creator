@@ -356,6 +356,7 @@
         <button class="btn btn-accent" id="ghConnectBtn">🔗 Verbinden</button>
         <button class="btn" id="ghPingBtn">🧪 PUT-Verbindung testen</button>
         <button class="btn" id="ghBigPingBtn">🧪 Große Testdaten (~700 KB) senden</button>
+        <button class="btn" id="ghTinySaveBtn">🧪 Echten Mini-Save testen (GitHub)</button>
         <span class="hint" id="ghStatus">Nicht verbunden.</span>
       </div>
       <div id="ghPingResult" class="hint" style="margin-top:6px;"></div>
@@ -1124,6 +1125,37 @@ $('ghConnectBtn').addEventListener('click', async ()=>{
 $('refreshSavedBtn').addEventListener('click', ()=>{
   if(!ghState.connected){ showToast("⚠️ Erst mit dem Worker verbinden"); return; }
   refreshSavedPacks();
+});
+
+$('ghTinySaveBtn').addEventListener('click', async ()=>{
+  const workerUrl = $('workerUrl').value.trim();
+  const resultEl = $('ghPingResult');
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
+    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
+    return;
+  }
+  resultEl.textContent = "Speichere winziges Test-Pack echt auf GitHub...";
+  const t0 = performance.now();
+  try{
+    const base = workerUrl.replace(/\/+$/,'');
+    const res = await fetch(base + "/packs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "__minisavetest__",
+        project: { version: 1, note: "Winziger Testeintrag vom Diagnose-Button", createdAt: new Date().toISOString() }
+      })
+    });
+    const ms = Math.round(performance.now() - t0);
+    const text = await res.text();
+    resultEl.textContent = res.ok
+      ? `✅ Echter Mini-Save auf GitHub erfolgreich in ${ms} ms — ${text}. Das GitHub-Schreiben an sich funktioniert also, das Problem hängt an der Datengröße/Menge.`
+      : `⚠️ Mini-Save antwortete mit Status ${res.status} nach ${ms} ms: ${text}`;
+  } catch(err){
+    const ms = Math.round(performance.now() - t0);
+    console.error(err);
+    resultEl.textContent = `❌ Mini-Save fehlgeschlagen nach ${ms} ms: ${String(err.message || err)} — dann liegt es NICHT an der Größe, sondern grundsätzlich am GitHub-Schreibpfad (Token-Rechte, Branch-Name, o. ä.).`;
+  }
 });
 
 $('ghBigPingBtn').addEventListener('click', async ()=>{
