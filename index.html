@@ -163,6 +163,49 @@
   .check-row input{ width:auto; }
   .check-row label{ margin:0; text-transform:none; letter-spacing:0; font-size:13px; color:var(--text); }
 
+  /* ---------- mode tabs (CIT / Normal) ---------- */
+  .tabs{
+    display:flex;
+    gap:6px;
+    margin-bottom:16px;
+    border-bottom: 2px solid var(--border-lo);
+    padding-bottom: 0;
+  }
+  .tab-btn{
+    background: var(--panel);
+    border-top: 2px solid var(--border-hi);
+    border-left: 2px solid var(--border-hi);
+    border-right: 2px solid var(--border-lo);
+    border-bottom: none;
+    color: var(--text-muted);
+    padding: 8px 16px;
+    font-weight: 700;
+    font-size: 12.5px;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    border-radius: 3px 3px 0 0;
+    transform: translateY(2px);
+  }
+  .tab-btn:hover{ color: var(--text); }
+  .tab-btn.active{
+    background: var(--panel-raised);
+    color: var(--accent);
+    border-bottom: 2px solid var(--panel-raised);
+  }
+  .badge-kind{
+    display:inline-block;
+    font-family:'Consolas','JetBrains Mono',monospace;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .badge-kind.cit{ background: rgba(108,199,214,0.15); color: var(--accent2); border:1px solid rgba(108,199,214,0.4); }
+  .badge-kind.normal{ background: rgba(226,182,74,0.15); color: var(--gold); border:1px solid rgba(226,182,74,0.4); }
+
   button{
     font-family: inherit;
     cursor: pointer;
@@ -323,7 +366,7 @@
   <header>
     <span class="eyebrow">OptiFine · Custom Item Textures</span>
     <h1>CIT Pack <span class="accent">Creator</span></h1>
-    <p>Trage ein, welches Item mit welchem angezeigten Namen ersetzt werden soll, und lade am Ende eine fertige Resourcepack-Ordnerstruktur herunter. Du musst danach nur noch dein Modell und deine Textur in den passenden Ordner legen.</p>
+    <p>Trage ein, welches Item mit welchem angezeigten Namen ersetzt werden soll (Modus <strong>CIT</strong>, braucht OptiFine), oder ersetze die Standard-Textur eines Items direkt (Modus <strong>Normal</strong>, funktioniert überall). Am Ende gibt's eine fertige Resourcepack-Ordnerstruktur zum Download.</p>
   </header>
 
   <!-- GitHub sync & project selector -->
@@ -391,72 +434,110 @@
   <!-- Add item form -->
   <section class="panel">
     <h2>Item hinzufügen <span class="n">2</span></h2>
-    <p class="sub">Ein Eintrag = ein Item, das bei passendem Namen eine eigene Textur/Modell bekommt.</p>
+    <p class="sub" id="modeSub">Ein Eintrag = ein Item, das bei passendem Namen eine eigene Textur/Modell bekommt.</p>
 
-    <div class="grid cols-2">
-      <div class="field">
-        <label for="itemId">Minecraft Item-ID</label>
-        <input type="text" id="itemId" list="itemList" placeholder="diamond_sword">
-        <div class="hint">Ohne "minecraft:" Präfix, z. B. <code>diamond_sword</code>, <code>stick</code>, <code>leather_chestplate</code></div>
-        <datalist id="itemList"></datalist>
+    <div class="tabs" id="modeTabs">
+      <button type="button" class="tab-btn active" data-mode="cit" id="tabCitBtn">⚙️ CIT</button>
+      <button type="button" class="tab-btn" data-mode="normal" id="tabNormalBtn">🖼️ Normal</button>
+    </div>
+
+    <!-- CIT-Formular: Textur/Modell wird abhängig vom angezeigten Namen (+ optional Lore) getauscht. -->
+    <div id="citForm">
+      <div class="grid cols-2">
+        <div class="field">
+          <label for="itemId">Minecraft Item-ID</label>
+          <input type="text" id="itemId" list="itemList" placeholder="diamond_sword">
+          <div class="hint">Ohne "minecraft:" Präfix, z. B. <code>diamond_sword</code>, <code>stick</code>, <code>leather_chestplate</code></div>
+          <datalist id="itemList"></datalist>
+        </div>
+        <div class="field">
+          <label for="itemName">Angezeigter Name im Spiel</label>
+          <input type="text" id="itemName" placeholder="Excalibur">
+          <div class="hint">Das ist der Name, den du dem Item z. B. im Amboss gibst.</div>
+        </div>
       </div>
-      <div class="field">
-        <label for="itemName">Angezeigter Name im Spiel</label>
-        <input type="text" id="itemName" placeholder="Excalibur">
-        <div class="hint">Das ist der Name, den du dem Item z. B. im Amboss gibst.</div>
+
+      <div class="grid cols-3" style="margin-top:12px;">
+        <div class="field">
+          <label for="matchType">Namensvergleich</label>
+          <select id="matchType">
+            <option value="exact">Exakt gleich</option>
+            <option value="contains">Enthält Text</option>
+            <option value="iregex">Regex (Groß/Klein egal)</option>
+            <option value="regex">Regex (genau)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="modelType">Modell-Typ</label>
+          <select id="modelType">
+            <option value="generated">Flaches Icon (item/generated)</option>
+            <option value="handheld">Werkzeug/Waffe (item/handheld)</option>
+            <option value="custom">Eigenes 3D-Modell (z. B. Blockbench)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="folderSlug">Ordner-/Dateiname</label>
+          <input type="text" id="folderSlug" placeholder="wird automatisch erzeugt">
+          <div class="hint">Nur a–z, 0–9, _</div>
+        </div>
+      </div>
+
+      <div class="grid cols-2" style="margin-top:12px;">
+        <div class="field" id="textureUploadField">
+          <label for="textureUpload" id="textureUploadLabel">Eigene Textur (.png)</label>
+          <input type="file" id="textureUpload" accept="image/png,.png">
+          <div class="hint" id="textureUploadHint">Optional — wird direkt anstelle des Platzhalters in den Ordner gelegt.</div>
+        </div>
+        <div class="field" id="modelUploadField" style="display:none;">
+          <label for="modelUpload">Eigenes Modell (.json)</label>
+          <input type="file" id="modelUpload" accept="application/json,.json">
+          <div class="hint">Optional — die <code>.properties</code> zeigt dann automatisch auf diesen Dateinamen.</div>
+        </div>
+      </div>
+
+      <div class="check-row">
+        <input type="checkbox" id="loreEnable">
+        <label for="loreEnable">Zusätzlich nach Lore-Text (1. Zeile) filtern</label>
+      </div>
+      <div class="field" id="loreField" style="display:none; margin-top:8px;">
+        <label for="loreText">Lore-Text (1. Zeile)</label>
+        <input type="text" id="loreText" placeholder="z. B. Legendäre Klinge">
+      </div>
+
+      <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-accent" id="addBtn">＋ Item hinzufügen</button>
+        <button class="btn" id="clearFormBtn">Formular leeren</button>
       </div>
     </div>
 
-    <div class="grid cols-3" style="margin-top:12px;">
-      <div class="field">
-        <label for="matchType">Namensvergleich</label>
-        <select id="matchType">
-          <option value="exact">Exakt gleich</option>
-          <option value="contains">Enthält Text</option>
-          <option value="iregex">Regex (Groß/Klein egal)</option>
-          <option value="regex">Regex (genau)</option>
-        </select>
+    <!-- Normal-Formular: einfache Textur-Ersetzung eines Vanilla-Items, kein OptiFine nötig. -->
+    <div id="normalForm" style="display:none;">
+      <div class="grid cols-2">
+        <div class="field">
+          <label for="normalItemId">Minecraft Item-ID</label>
+          <input type="text" id="normalItemId" list="itemList" placeholder="diamond_sword">
+          <div class="hint">Ohne "minecraft:" Präfix. Die normale Textur <em>dieses</em> Items wird direkt ersetzt (kein Name/Lore nötig, gilt für alle Exemplare).</div>
+        </div>
+        <div class="field">
+          <label for="normalType">Typ</label>
+          <select id="normalType">
+            <option value="generated">Item (flaches Icon)</option>
+            <option value="handheld">Werkzeug (wird in der Hand gehalten)</option>
+          </select>
+          <div class="hint">Bestimmt, wie das Item in der Hand/im Inventar dargestellt wird.</div>
+        </div>
       </div>
-      <div class="field">
-        <label for="modelType">Modell-Typ</label>
-        <select id="modelType">
-          <option value="generated">Flaches Icon (item/generated)</option>
-          <option value="handheld">Werkzeug/Waffe (item/handheld)</option>
-          <option value="custom">Eigenes 3D-Modell (z. B. Blockbench)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="folderSlug">Ordner-/Dateiname</label>
-        <input type="text" id="folderSlug" placeholder="wird automatisch erzeugt">
-        <div class="hint">Nur a–z, 0–9, _</div>
-      </div>
-    </div>
 
-    <div class="grid cols-2" style="margin-top:12px;">
-      <div class="field" id="textureUploadField">
-        <label for="textureUpload" id="textureUploadLabel">Eigene Textur (.png)</label>
-        <input type="file" id="textureUpload" accept="image/png,.png">
-        <div class="hint" id="textureUploadHint">Optional — wird direkt anstelle des Platzhalters in den Ordner gelegt.</div>
+      <div class="field" style="margin-top:12px;">
+        <label for="normalTexture">Neue Textur (.png)</label>
+        <input type="file" id="normalTexture" accept="image/png,.png">
+        <div class="hint">Erforderlich — ersetzt die Standard-Textur dieses Items im fertigen Pack.</div>
       </div>
-      <div class="field" id="modelUploadField" style="display:none;">
-        <label for="modelUpload">Eigenes Modell (.json)</label>
-        <input type="file" id="modelUpload" accept="application/json,.json">
-        <div class="hint">Optional — die <code>.properties</code> zeigt dann automatisch auf diesen Dateinamen.</div>
+
+      <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-accent" id="addNormalBtn">＋ Item hinzufügen</button>
+        <button class="btn" id="clearNormalFormBtn">Formular leeren</button>
       </div>
-    </div>
-
-    <div class="check-row">
-      <input type="checkbox" id="loreEnable">
-      <label for="loreEnable">Zusätzlich nach Lore-Text (1. Zeile) filtern</label>
-    </div>
-    <div class="field" id="loreField" style="display:none; margin-top:8px;">
-      <label for="loreText">Lore-Text (1. Zeile)</label>
-      <input type="text" id="loreText" placeholder="z. B. Legendäre Klinge">
-    </div>
-
-    <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
-      <button class="btn btn-accent" id="addBtn">＋ Item hinzufügen</button>
-      <button class="btn" id="clearFormBtn">Formular leeren</button>
     </div>
   </section>
 
@@ -488,7 +569,7 @@
   </section>
 
   <footer>
-    Erstellt Dateien für OptiFine's Custom Item Textures (CIT). Benötigt OptiFine im Spiel &amp; aktivierte "Custom Items" in den Videoeinstellungen.
+    Normal-Einträge funktionieren als reines Vanilla-Resourcepack. CIT-Einträge nutzen OptiFine's Custom Item Textures — dafür OptiFine im Spiel &amp; aktivierte "Custom Items" in den Videoeinstellungen benötigt.
   </footer>
 </div>
 
@@ -681,6 +762,23 @@ function updateUploadFields(){
 $('modelType').addEventListener('change', updateUploadFields);
 updateUploadFields();
 
+// ---------- Tab-Umschaltung: CIT- vs. Normal-Formular ----------
+const MODE_SUB_TEXT = {
+  cit: "Ein Eintrag = ein Item, das bei passendem Namen eine eigene Textur/Modell bekommt.",
+  normal: "Ein Eintrag = ein Vanilla-Item, dessen Standard-Textur direkt ersetzt wird — funktioniert ohne OptiFine."
+};
+let addMode = "cit";
+function setAddMode(mode){
+  addMode = mode;
+  $('citForm').style.display = (mode === "cit") ? 'block' : 'none';
+  $('normalForm').style.display = (mode === "normal") ? 'block' : 'none';
+  $('tabCitBtn').classList.toggle('active', mode === "cit");
+  $('tabNormalBtn').classList.toggle('active', mode === "normal");
+  $('modeSub').textContent = MODE_SUB_TEXT[mode];
+}
+$('tabCitBtn').addEventListener('click', ()=> setAddMode('cit'));
+$('tabNormalBtn').addEventListener('click', ()=> setAddMode('normal'));
+
 $('clearFormBtn').addEventListener('click', ()=>{
   $('itemId').value = "";
   $('itemName').value = "";
@@ -768,6 +866,7 @@ $('addBtn').addEventListener('click', async ()=>{
 
   entries.push({
     id: ++counter,
+    kind: "cit",
     itemId, name, matchType, modelType, folder,
     lore: (loreEnabled && lore) ? lore : null,
     textureFile,
@@ -778,6 +877,47 @@ $('addBtn').addEventListener('click', async ()=>{
   render();
   showToast("✅ Hinzugefügt: " + name);
   $('clearFormBtn').click();
+  addBtnEl.disabled = false;
+});
+
+$('clearNormalFormBtn').addEventListener('click', ()=>{
+  $('normalItemId').value = "";
+  $('normalType').value = "generated";
+  $('normalTexture').value = "";
+});
+
+$('addNormalBtn').addEventListener('click', async ()=>{
+  const itemId = $('normalItemId').value.trim().replace(/^minecraft:/,'');
+  const modelType = $('normalType').value;
+  const textureFileInput = $('normalTexture').files[0] || null;
+
+  if(!itemId){ showToast("⚠️ Bitte eine Item-ID angeben"); $('normalItemId').focus(); return; }
+  if(!textureFileInput){ showToast("⚠️ Bitte eine Textur (.png) hochladen"); $('normalTexture').focus(); return; }
+
+  const addBtnEl = $('addNormalBtn');
+  addBtnEl.disabled = true;
+
+  let textureFile = null;
+  try{
+    const dataBase64 = await readFileAsBase64(textureFileInput);
+    textureFile = { name: textureFileInput.name.replace(/[^a-zA-Z0-9_.\-]+/g,'_'), dataBase64 };
+  } catch(err){
+    console.error(err);
+    showToast("❌ Datei konnte nicht gelesen werden");
+    addBtnEl.disabled = false;
+    return;
+  }
+
+  entries.push({
+    id: ++counter,
+    kind: "normal",
+    itemId, modelType,
+    textureFile
+  });
+
+  render();
+  showToast("✅ Hinzugefügt: " + itemId);
+  $('clearNormalFormBtn').click();
   addBtnEl.disabled = false;
 });
 
@@ -797,6 +937,24 @@ function render(){
     slotsEl.style.display = 'grid';
     emptyEl.style.display = 'none';
     slotsEl.innerHTML = entries.map(e=>{
+      if(e.kind === "normal"){
+        const uploadsHtml = e.textureFile
+          ? `<div class="path" style="color: var(--accent);">🖼️ ${escapeHtml(e.textureFile.name)}</div>`
+          : "";
+        const typeLabel = e.modelType === "handheld" ? "Werkzeug" : "Item";
+        return `
+        <div class="slot">
+          <div class="icon">${iconFor(e.itemId)}</div>
+          <div class="meta">
+            <div class="name">${escapeHtml(e.itemId)}<span class="badge-kind normal">Normal</span></div>
+            <div class="item-id">${typeLabel}</div>
+            <div class="path">textures/item/${escapeHtml(e.itemId)}.png</div>
+            ${uploadsHtml}
+          </div>
+          <button class="btn-danger remove" data-id="${e.id}" title="Entfernen">✕</button>
+        </div>
+      `;
+      }
       const uploads = [];
       if(e.modelFile) uploads.push("📐 " + escapeHtml(e.modelFile.name));
       if(e.textureFile) uploads.push("🖼️ " + escapeHtml(e.textureFile.name));
@@ -807,7 +965,7 @@ function render(){
       <div class="slot">
         <div class="icon">${iconFor(e.itemId)}</div>
         <div class="meta">
-          <div class="name">${escapeHtml(e.name)}</div>
+          <div class="name">${escapeHtml(e.name)}<span class="badge-kind cit">CIT</span></div>
           <div class="item-id">${escapeHtml(e.itemId)}</div>
           <div class="path">optifine/cit/${escapeHtml(e.folder)}/</div>
           ${uploadsHtml}
@@ -830,29 +988,58 @@ function escapeHtml(s){
 
 function renderTree(){
   const packName = $('packName').value.trim() || "CIT Pack";
+  const citEntries = entries.filter(e=>e.kind !== "normal");
+  const normalEntries = entries.filter(e=>e.kind === "normal");
   let lines = [];
   lines.push(`<span class="dir">${escapeHtml(packName)}/</span>`);
   lines.push(`├── <span class="file">pack.mcmeta</span>`);
   lines.push(`├── <span class="file">ANLEITUNG.txt</span>`);
-  lines.push(`└── <span class="dir">assets/minecraft/optifine/cit/</span>`);
-  entries.forEach((e,i)=>{
-    const last = i === entries.length-1;
-    const branch = last ? "└──" : "├──";
-    const pipe = last ? "    " : "│   ";
-    lines.push(`    ${branch} <span class="dir">${escapeHtml(e.folder)}/</span>`);
-    lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.folder)}.properties</span>`);
-    if(e.modelFile){
-      lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.modelFile.name)}</span>  <span style="color:#8a8a86">← hochgeladen</span>`);
-    } else {
-      lines.push(`    ${pipe}   ├── <span class="placeholder">model.json</span>  <span style="color:#8a8a86">← eigenes Modell hier rein</span>`);
-    }
-    if(e.textureFile){
-      lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.textureFile.name)}</span> <span style="color:#8a8a86">← hochgeladen</span>`);
-    } else {
-      lines.push(`    ${pipe}   ├── <span class="placeholder">texture.png</span> <span style="color:#8a8a86">← eigene Textur hier rein</span>`);
-    }
-    lines.push(`    ${pipe}   └── <span class="file">ANLEITUNG.txt</span>`);
-  });
+
+  const hasBoth = citEntries.length && normalEntries.length;
+
+  if(citEntries.length){
+    const branchTop = (hasBoth || normalEntries.length) ? "├──" : "└──";
+    lines.push(`${branchTop} <span class="dir">assets/minecraft/optifine/cit/</span>`);
+    citEntries.forEach((e,i)=>{
+      const last = i === citEntries.length-1;
+      const branch = last ? "└──" : "├──";
+      const pipe = last ? "    " : "│   ";
+      lines.push(`    ${branch} <span class="dir">${escapeHtml(e.folder)}/</span>`);
+      lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.folder)}.properties</span>`);
+      if(e.modelFile){
+        lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.modelFile.name)}</span>  <span style="color:#8a8a86">← hochgeladen</span>`);
+      } else {
+        lines.push(`    ${pipe}   ├── <span class="placeholder">model.json</span>  <span style="color:#8a8a86">← eigenes Modell hier rein</span>`);
+      }
+      if(e.textureFile){
+        lines.push(`    ${pipe}   ├── <span class="file">${escapeHtml(e.textureFile.name)}</span> <span style="color:#8a8a86">← hochgeladen</span>`);
+      } else {
+        lines.push(`    ${pipe}   ├── <span class="placeholder">texture.png</span> <span style="color:#8a8a86">← eigene Textur hier rein</span>`);
+      }
+      lines.push(`    ${pipe}   └── <span class="file">ANLEITUNG.txt</span>`);
+    });
+  }
+
+  if(normalEntries.length){
+    lines.push(`└── <span class="dir">assets/minecraft/ (Normal-Ersetzungen)</span>`);
+    lines.push(`    ├── <span class="dir">models/item/</span>`);
+    normalEntries.forEach((e,i)=>{
+      const last = i === normalEntries.length-1;
+      const branch = last ? "└──" : "├──";
+      lines.push(`    │   ${branch} <span class="file">${escapeHtml(e.itemId)}.json</span>`);
+    });
+    lines.push(`    └── <span class="dir">textures/item/</span>`);
+    normalEntries.forEach((e,i)=>{
+      const last = i === normalEntries.length-1;
+      const branch = last ? "└──" : "├──";
+      lines.push(`        ${branch} <span class="file">${escapeHtml(e.itemId)}.png</span> <span style="color:#8a8a86">← hochgeladen</span>`);
+    });
+  }
+
+  if(!citEntries.length && !normalEntries.length){
+    lines.push(`└── <span class="dir">assets/minecraft/optifine/cit/</span>`);
+  }
+
   $('treeView').innerHTML = lines.join("\n");
 }
 
@@ -882,6 +1069,13 @@ function modelJson(modelType){
   return {
     parent: "item/generated",
     textures: { layer0: "./texture" }
+  };
+}
+
+function modelJsonNormal(itemId, modelType){
+  return {
+    parent: modelType === "handheld" ? "item/handheld" : "item/generated",
+    textures: { layer0: "item/" + itemId }
   };
 }
 
@@ -944,36 +1138,75 @@ function folderReadme(e){
 }
 
 function mainReadme(){
+  const citEntries = entries.filter(e=>e.kind !== "normal");
+  const normalEntries = entries.filter(e=>e.kind === "normal");
   const lines = [
-    "CIT PACK — ANLEITUNG",
+    "RESOURCEPACK — ANLEITUNG",
     "".padEnd(40,"="),
-    "",
-    "Dieses Resourcepack nutzt OptiFine's 'Custom Item Textures' (CIT).",
-    "Voraussetzung: OptiFine ist installiert und 'Custom Items' ist unter",
-    "Video-Einstellungen -> Qualität aktiviert.",
-    "",
-    "SO GEHT'S:",
-    "",
-    "1. Diesen Ordner (oder das ZIP direkt) nach",
-    "   .minecraft/resourcepacks/ kopieren.",
-    "",
-    "2. Für jedes Item in assets/minecraft/optifine/cit/<ordner>/:",
-    "   - 'model.json' durch dein eigenes Modell ersetzen",
-    "     (z. B. Export aus Blockbench, Format: Minecraft Item Model)",
-    "   - 'texture.png' durch deine eigene Textur ersetzen",
-    "   (Details dazu stehen jeweils in der ANLEITUNG.txt im Ordner.)",
-    "",
-    "3. Resourcepack im Spiel aktivieren.",
-    "",
-    "ENTHALTENE ITEMS:",
     ""
   ];
-  entries.forEach(e=>{
-    lines.push(`- ${e.name}  (Item: ${e.itemId}, Ordner: assets/minecraft/optifine/cit/${e.folder}/)`);
-  });
+
+  if(normalEntries.length && !citEntries.length){
+    lines.push("Dieses Pack ersetzt Standard-Texturen direkt (kein OptiFine nötig).");
+  } else if(citEntries.length && !normalEntries.length){
+    lines.push("Dieses Resourcepack nutzt OptiFine's 'Custom Item Textures' (CIT).");
+    lines.push("Voraussetzung: OptiFine ist installiert und 'Custom Items' ist unter");
+    lines.push("Video-Einstellungen -> Qualität aktiviert.");
+  } else {
+    lines.push("Dieses Pack kombiniert zwei Arten von Ersetzungen:");
+    lines.push("- 'Normal': direkte Textur-Ersetzung eines Items (funktioniert immer).");
+    lines.push("- 'CIT': OptiFine's 'Custom Item Textures' — Textur/Modell wechselt je");
+    lines.push("  nach angezeigtem Namen. Braucht OptiFine + aktivierte 'Custom Items'");
+    lines.push("  unter Video-Einstellungen -> Qualität.");
+  }
   lines.push("");
-  lines.push("Tipp: Mehrere Namens-Varianten für dasselbe Item? Einfach mehrmals");
-  lines.push("mit unterschiedlichem Namen/Ordner hinzufügen und neu exportieren.");
+  lines.push("SO GEHT'S:");
+  lines.push("");
+  lines.push("1. Diesen Ordner (oder das ZIP direkt) nach");
+  lines.push("   .minecraft/resourcepacks/ kopieren.");
+  lines.push("");
+
+  let step = 2;
+  if(normalEntries.length){
+    lines.push(`${step}. Die 'Normal'-Items sind bereits fertig — keine weiteren Schritte nötig.`);
+    lines.push("");
+    step++;
+  }
+  if(citEntries.length){
+    lines.push(`${step}. Für jedes 'CIT'-Item in assets/minecraft/optifine/cit/<ordner>/:`);
+    lines.push("   - 'model.json' durch dein eigenes Modell ersetzen");
+    lines.push("     (z. B. Export aus Blockbench, Format: Minecraft Item Model)");
+    lines.push("   - 'texture.png' durch deine eigene Textur ersetzen");
+    lines.push("   (Details dazu stehen jeweils in der ANLEITUNG.txt im Ordner.)");
+    lines.push("   Hinweis: Falls du beim Hinzufügen bereits eine Textur/ein Modell");
+    lines.push("   hochgeladen hast, liegt die passende Datei schon dort.");
+    lines.push("");
+    step++;
+  }
+  lines.push(`${step}. Resourcepack im Spiel aktivieren.`);
+  lines.push("");
+
+  if(normalEntries.length){
+    lines.push("ENTHALTENE NORMAL-ITEMS:");
+    lines.push("");
+    normalEntries.forEach(e=>{
+      const typeLabel = e.modelType === "handheld" ? "Werkzeug" : "Item";
+      lines.push(`- ${e.itemId}  (${typeLabel}, Textur: assets/minecraft/textures/item/${e.itemId}.png)`);
+    });
+    lines.push("");
+  }
+
+  if(citEntries.length){
+    lines.push("ENTHALTENE CIT-ITEMS:");
+    lines.push("");
+    citEntries.forEach(e=>{
+      lines.push(`- ${e.name}  (Item: ${e.itemId}, Ordner: assets/minecraft/optifine/cit/${e.folder}/)`);
+    });
+    lines.push("");
+    lines.push("Tipp: Mehrere Namens-Varianten für dasselbe CIT-Item? Einfach mehrmals");
+    lines.push("mit unterschiedlichem Namen/Ordner hinzufügen und neu exportieren.");
+  }
+
   return lines.join("\n") + "\n";
 }
 
@@ -1052,6 +1285,7 @@ function serializeProject(){
     packDesc: $('packDesc').value.trim() || "Custom Item Textures",
     packFormat: parseInt($('packFormat').value, 10) || 48,
     entries: entries.map(e => ({
+      kind: e.kind || "cit",
       itemId: e.itemId, name: e.name, matchType: e.matchType, modelType: e.modelType,
       folder: e.folder, lore: e.lore,
       modelFile: e.modelFile, textureFile: e.textureFile,
@@ -1064,7 +1298,7 @@ function loadProjectFromData(data){
   $('packName').value = data.packName || "Mein CIT Pack";
   $('packDesc').value = data.packDesc || "Custom Item Textures";
   $('packFormat').value = data.packFormat || 48;
-  entries = (data.entries || []).map(e => ({ ...e, id: ++counter }));
+  entries = (data.entries || []).map(e => ({ kind: "cit", ...e, id: ++counter }));
   render();
   updatePackFormatHint();
 }
@@ -1313,23 +1547,42 @@ $('downloadBtn').addEventListener('click', async ()=>{
 
     root.file("ANLEITUNG.txt", mainReadme());
 
-    const citRoot = root.folder("assets").folder("minecraft").folder("optifine").folder("cit");
-    entries.forEach(e=>{
-      const f = citRoot.folder(e.folder);
-      f.file(e.folder + ".properties", propertiesContent(e));
+    const citEntries = entries.filter(e=>e.kind !== "normal");
+    const normalEntries = entries.filter(e=>e.kind === "normal");
 
-      if(e.modelFile){
-        f.file(e.modelFile.name, e.modelFile.content);
-      } else {
-        f.file("model.json", JSON.stringify(modelJson(e.modelType), null, 2));
-      }
+    if(citEntries.length){
+      const citRoot = root.folder("assets").folder("minecraft").folder("optifine").folder("cit");
+      citEntries.forEach(e=>{
+        const f = citRoot.folder(e.folder);
+        f.file(e.folder + ".properties", propertiesContent(e));
 
-      if(e.textureFile){
-        f.file(e.textureFile.name, e.textureFile.dataBase64, { base64: true });
-      }
+        if(e.modelFile){
+          f.file(e.modelFile.name, e.modelFile.content);
+        } else {
+          f.file("model.json", JSON.stringify(modelJson(e.modelType), null, 2));
+        }
 
-      f.file("ANLEITUNG.txt", folderReadme(e));
-    });
+        if(e.textureFile){
+          f.file(e.textureFile.name, e.textureFile.dataBase64, { base64: true });
+        }
+
+        f.file("ANLEITUNG.txt", folderReadme(e));
+      });
+    }
+
+    if(normalEntries.length){
+      // Direkte Vanilla-Ersetzung: keine .properties/Ordner, sondern model + Textur
+      // an der Standard-Pfadstelle des jeweiligen Items — funktioniert ohne OptiFine.
+      const modelsRoot = root.folder("assets").folder("minecraft").folder("models").folder("item");
+      const texturesRoot = root.folder("assets").folder("minecraft").folder("textures").folder("item");
+      // Bei doppelter Item-ID gewinnt der letzte Eintrag (kein doppelter Zip-Eintrag).
+      const byItemId = new Map();
+      normalEntries.forEach(e=> byItemId.set(e.itemId, e));
+      byItemId.forEach(e=>{
+        modelsRoot.file(e.itemId + ".json", JSON.stringify(modelJsonNormal(e.itemId, e.modelType), null, 2));
+        texturesRoot.file(e.itemId + ".png", e.textureFile.dataBase64, { base64: true });
+      });
+    }
 
     const blob = await zip.generateAsync({ type: "blob" });
 
