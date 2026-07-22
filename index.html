@@ -1332,16 +1332,11 @@ $('downloadBtn').addEventListener('click', async ()=>{
     });
 
     const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = slugify(packName) + ".zip";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url), 4000);
-    showToast("📦 Pack heruntergeladen!");
 
+    // Wichtig: Erst der Worker-Sync, DANN der lokale Download.
+    // Der native "Möchtest du XY.zip laden?"-Dialog von Safari/iOS pausiert
+    // offenbar laufende fetch()-Anfragen der Seite — wenn der Sync danach
+    // läuft, wird er dadurch mit "Load failed" abgebrochen.
     if(ghState.connected){
       $('syncErrorBox').style.display = "none";
       const projectData = serializeProject();
@@ -1359,13 +1354,24 @@ $('downloadBtn').addEventListener('click', async ()=>{
         showToast("☁️ Auch gespeichert (via Worker)");
       } catch(err){
         console.error(err);
-        showToast("⚠️ Lokal gespeichert, aber Worker-Sync fehlgeschlagen");
+        showToast("⚠️ Worker-Sync fehlgeschlagen — Download folgt trotzdem");
         $('syncErrorText').textContent =
           String(err.message || err) +
           `\n\n(Projekt-Daten: ~${projectSizeKb} KB, ZIP: ~${zipSizeKb} KB)`;
         $('syncErrorBox').style.display = "block";
       }
     }
+
+    btn.textContent = "⬇️ Download...";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = slugify(packName) + ".zip";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    showToast("📦 Pack heruntergeladen!");
   } catch(err){
     console.error(err);
     showToast("❌ Fehler beim Erstellen — siehe Konsole");
