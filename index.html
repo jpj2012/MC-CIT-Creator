@@ -358,6 +358,7 @@
         <button class="btn" id="ghBigPingBtn">🧪 Große Testdaten (~700 KB) senden</button>
         <button class="btn" id="ghTinySaveBtn">🧪 Echten Mini-Save testen (GitHub)</button>
         <button class="btn" id="ghBigSaveBtn">🧪 Echten 700-KB-Save testen (GitHub)</button>
+        <button class="btn" id="ghZipTestBtn">🧪 ZIP-Endpunkt testen (~650 KB binär)</button>
         <span class="hint" id="ghStatus">Nicht verbunden.</span>
       </div>
       <div id="ghPingResult" class="hint" style="margin-top:6px;"></div>
@@ -1126,6 +1127,39 @@ $('ghConnectBtn').addEventListener('click', async ()=>{
 $('refreshSavedBtn').addEventListener('click', ()=>{
   if(!ghState.connected){ showToast("⚠️ Erst mit dem Worker verbinden"); return; }
   refreshSavedPacks();
+});
+
+$('ghZipTestBtn').addEventListener('click', async ()=>{
+  const workerUrl = $('workerUrl').value.trim();
+  const resultEl = $('ghPingResult');
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
+    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
+    return;
+  }
+  resultEl.textContent = "Sende ~650 KB rohe Binärdaten an den ZIP-Endpunkt...";
+  const t0 = performance.now();
+  try{
+    const base = workerUrl.replace(/\/+$/,'');
+    // Simuliert exakt das, was der echte Download-Handler tut: eine Blob mit Binärdaten
+    const bytes = new Uint8Array(650 * 1024);
+    for(let i=0;i<bytes.length;i++) bytes[i] = i % 256;
+    const blob = new Blob([bytes], { type: "application/octet-stream" });
+
+    const res = await fetch(base + "/packs/" + encodeURIComponent("__zipendpointtest__") + "/zip", {
+      method: "PUT",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: blob
+    });
+    const ms = Math.round(performance.now() - t0);
+    const text = await res.text();
+    resultEl.textContent = res.ok
+      ? `✅ ZIP-Endpunkt-Test erfolgreich in ${ms} ms — ${text}.`
+      : `⚠️ ZIP-Endpunkt-Test antwortete mit Status ${res.status} nach ${ms} ms: ${text}`;
+  } catch(err){
+    const ms = Math.round(performance.now() - t0);
+    console.error(err);
+    resultEl.textContent = `❌ ZIP-Endpunkt-Test fehlgeschlagen nach ${ms} ms: ${String(err.message || err)} — gefunden! Der Fehler steckt speziell im ZIP-Binär-Endpunkt.`;
+  }
 });
 
 $('ghBigSaveBtn').addEventListener('click', async ()=>{
