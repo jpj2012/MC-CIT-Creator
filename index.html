@@ -206,6 +206,34 @@
   .badge-kind.cit{ background: rgba(108,199,214,0.15); color: var(--accent2); border:1px solid rgba(108,199,214,0.4); }
   .badge-kind.normal{ background: rgba(226,182,74,0.15); color: var(--gold); border:1px solid rgba(226,182,74,0.4); }
 
+  /* ---------- name-conflict modal ---------- */
+  .modal-overlay{
+    display:none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,10,0.72);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-box{
+    background: var(--panel-raised);
+    border-top: 2px solid var(--border-hi);
+    border-left: 2px solid var(--border-hi);
+    border-right: 2px solid var(--border-lo);
+    border-bottom: 2px solid var(--border-lo);
+    border-radius: 4px;
+    padding: 22px;
+    max-width: 420px;
+    width: 100%;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+  .modal-box h3{ margin: 0 0 10px 0; font-size: 16px; color: var(--gold); }
+  .modal-msg{ margin: 0 0 14px 0; font-size: 13.5px; line-height:1.5; color: var(--text-muted); }
+  .modal-error{ min-height: 18px; font-size: 12.5px; color: #e26b6b; margin-top: 6px; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:10px; margin-top: 16px; flex-wrap: wrap; }
+
   button{
     font-family: inherit;
     cursor: pointer;
@@ -574,6 +602,22 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="nameConflictModal">
+  <div class="modal-box">
+    <h3>⚠️ Name bereits vergeben</h3>
+    <p id="nameConflictMessage" class="modal-msg"></p>
+    <div class="field">
+      <label for="nameConflictInput">Neuer Pack-Name</label>
+      <input type="text" id="nameConflictInput" placeholder="z. B. Döner_v2">
+    </div>
+    <div class="modal-error" id="nameConflictError"></div>
+    <div class="modal-actions">
+      <button class="btn" id="nameConflictCancelBtn">Abbrechen</button>
+      <button class="btn btn-accent" id="nameConflictConfirmBtn">Unter neuem Namen speichern</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const $ = (id)=>document.getElementById(id);
@@ -1213,6 +1257,10 @@ function mainReadme(){
 // ---------- Worker Sync (Worker hält den GitHub-Token geheim) ----------
 let ghState = { workerUrl:"", connected:false };
 let savedPacks = [];
+// Name des Packs, das aktuell aus der Liste geladen ist (oder zuletzt erfolgreich
+// darunter gespeichert wurde). Nur wenn der aktuelle Pack-Name damit übereinstimmt,
+// darf beim Speichern ohne Rückfrage überschrieben werden.
+let loadedPackName = null;
 
 async function arrayBufferToBase64(buffer){
   let binary = "";
@@ -1299,6 +1347,7 @@ function loadProjectFromData(data){
   $('packDesc').value = data.packDesc || "Custom Item Textures";
   $('packFormat').value = data.packFormat || 48;
   entries = (data.entries || []).map(e => ({ kind: "cit", ...e, id: ++counter }));
+  loadedPackName = ($('packName').value || "").trim() || null;
   render();
   updatePackFormatHint();
 }
@@ -1308,8 +1357,68 @@ function resetProject(){
   $('packName').value = "Mein CIT Pack";
   $('packDesc').value = "Custom Item Textures";
   $('packFormat').value = "48";
+  loadedPackName = null;
   updatePackFormatHint();
   render();
+}
+
+// Fragt per Modal nach einem alternativen Pack-Namen, wenn der aktuelle Name
+// bereits vergeben ist, aber das aktuelle Projekt nicht aus genau diesem
+// gespeicherten Pack geladen wurde. Löst mit dem neuen (garantiert freien)
+// Namen auf, oder mit null, wenn der Nutzer abbricht.
+function askForNewPackName(conflictName){
+  return new Promise((resolve)=>{
+    const overlay = $('nameConflictModal');
+    const input = $('nameConflictInput');
+    const errorEl = $('nameConflictError');
+    const msgEl = $('nameConflictMessage');
+    const confirmBtn = $('nameConflictConfirmBtn');
+    const cancelBtn = $('nameConflictCancelBtn');
+
+    msgEl.textContent = `Ein Pack namens "${conflictName}" existiert bereits auf GitHub, wurde aber nicht geladen. Gib einen anderen Namen ein, um es als neues Pack zu speichern, oder brich ab.`;
+    errorEl.textContent = "";
+    input.value = "";
+    overlay.style.display = "flex";
+    setTimeout(()=> input.focus(), 0);
+
+    function cleanup(){
+      overlay.style.display = "none";
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKeydown);
+    }
+    function onConfirm(){
+      const newName = input.value.trim();
+      if(!newName){
+        errorEl.textContent = "⚠️ Bitte einen Namen eingeben.";
+        return;
+      }
+      if(newName === conflictName){
+        errorEl.textContent = "⚠️ Das ist derselbe Name — bitte einen anderen wählen.";
+        return;
+      }
+      if(savedPacks.some(p=>p.name === newName)){
+        // Auch der neue Name ist schon vergeben -> gleich nochmal nachfragen.
+        cleanup();
+        askForNewPackName(newName).then(resolve);
+        return;
+      }
+      cleanup();
+      resolve(newName);
+    }
+    function onCancel(){
+      cleanup();
+      resolve(null);
+    }
+    function onKeydown(e){
+      if(e.key === "Enter"){ e.preventDefault(); onConfirm(); }
+      if(e.key === "Escape"){ e.preventDefault(); onCancel(); }
+    }
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKeydown);
+  });
 }
 
 async function refreshSavedPacks(){
@@ -1324,7 +1433,9 @@ async function refreshSavedPacks(){
     const allPacks = await workerListPacks();
     // Diagnose-Test-Packs (von den Test-Buttons oben) ausblenden, ohne sie zu löschen.
     // Alle Test-Buttons speichern unter Namen wie "__minisavetest__" — dieses Muster wird gefiltert.
-    savedPacks = allPacks.filter(p => !/^__.*__$/.test(p.name));
+    // Zusätzlich werden minisavetest/bigsavetest auch ohne die __-Umrandung gefiltert
+    // (ältere gespeicherte Testeinträge tragen den Namen ohne Unterstriche).
+    savedPacks = allPacks.filter(p => !/^__.*__$/.test(p.name) && !/minisavetest|bigsavetest/i.test(p.name));
     const current = select.value;
     select.innerHTML = '<option value="__new__">🆕 Neues Pack</option>' +
       savedPacks.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
@@ -1534,11 +1645,30 @@ $('downloadBtn').addEventListener('click', async ()=>{
   if(entries.length === 0) return;
   const btn = $('downloadBtn');
   const originalText = btn.textContent;
+
+  // Vor jeder Aktion prüfen: Würden wir ein GitHub-Pack überschreiben, das wir
+  // gar nicht geladen haben? Dann erst nachfragen, statt es stillschweigend
+  // zu überschreiben. Nur relevant, wenn ein Worker verbunden ist.
+  let packName = $('packName').value.trim() || "CIT Pack";
+  if(ghState.connected){
+    const nameTaken = savedPacks.some(p => p.name === packName);
+    const isEditingLoadedPack = loadedPackName !== null && loadedPackName === packName;
+    if(nameTaken && !isEditingLoadedPack){
+      const newName = await askForNewPackName(packName);
+      if(newName === null){
+        showToast("❌ Speichern abgebrochen");
+        return;
+      }
+      packName = newName;
+      $('packName').value = packName;
+      renderTree();
+    }
+  }
+
   btn.textContent = "⏳ Erstelle ZIP...";
   btn.disabled = true;
   try{
     const zip = new JSZip();
-    const packName = $('packName').value.trim() || "CIT Pack";
     const packDesc = $('packDesc').value.trim() || "Custom Item Textures";
     const packFormat = parseInt($('packFormat').value, 10) || 48;
     const root = zip.folder(packName);
@@ -1604,6 +1734,7 @@ $('downloadBtn').addEventListener('click', async ()=>{
 
         await refreshSavedPacks();
         $('projectSelect').value = packName;
+        loadedPackName = packName;
         showToast("☁️ Auch gespeichert (via Worker)");
       } catch(err){
         console.error(err);
