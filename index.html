@@ -112,7 +112,7 @@
     text-transform: uppercase;
     letter-spacing: .04em;
   }
-  input[type=text], input[type=number], select, textarea{
+  input[type=text], input[type=number], input[type=password], select, textarea{
     width: 100%;
     background: var(--slot);
     border-top: 2px solid var(--border-lo);
@@ -416,6 +416,18 @@
       </div>
     </div>
 
+    <div class="grid cols-2" style="margin-top:12px;">
+      <div class="field">
+        <label for="privacyCodeInput">🔒 Code für private Packs</label>
+        <input type="password" id="privacyCodeInput" placeholder="Code eingeben, um private Packs anzuzeigen" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn" id="privacyUnlockBtn" style="width:100%;">🔓 Freischalten</button>
+      </div>
+    </div>
+    <div class="hint" id="privacyHint"></div>
+
     <details id="githubDetails" style="margin-top:14px;">
       <summary id="githubSummary">Worker-Verbindung einrichten</summary>
       <div class="field" style="margin-top:12px;">
@@ -456,6 +468,16 @@
         <div class="hint">Frei eingeben oder aus der Liste wählen (scrollbar).</div>
         <div class="hint" id="packFormatModeHint"></div>
       </div>
+    </div>
+
+    <div class="check-row" style="margin-top:14px;">
+      <input type="checkbox" id="packPrivate">
+      <label for="packPrivate">🔒 Pack ist privat (erscheint nur mit Code in der Liste)</label>
+    </div>
+    <div class="field" id="packPrivateCodeField" style="display:none; margin-top:8px; max-width:320px;">
+      <label for="packPrivateCode">Code / Passwort</label>
+      <input type="password" id="packPrivateCode" placeholder="Code für dieses Pack" autocomplete="off">
+      <div class="hint" id="packPrivateCodeHint">Wird nur als Hash gespeichert, nicht im Klartext.</div>
     </div>
   </section>
 
@@ -1030,6 +1052,19 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
+// SHA-256-Hash (hex) eines Codes/Passworts. Es wird nie der Klartext gespeichert.
+async function sha256Hex(text){
+  const enc = new TextEncoder().encode(text);
+  const hashBuf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(hashBuf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function updatePackPrivateField(){
+  $('packPrivateCodeField').style.display = $('packPrivate').checked ? 'block' : 'none';
+}
+$('packPrivate').addEventListener('change', updatePackPrivateField);
+updatePackPrivateField();
+
 function renderTree(){
   const packName = $('packName').value.trim() || "CIT Pack";
   const citEntries = entries.filter(e=>e.kind !== "normal");
@@ -1257,10 +1292,37 @@ function mainReadme(){
 // ---------- Worker Sync (Worker hält den GitHub-Token geheim) ----------
 let ghState = { workerUrl:"", connected:false };
 let savedPacks = [];
+// Alle bekannten Pack-Namen (inkl. noch nicht freigeschalteter privater Packs) —
+// wird für die Namens-Konflikt-Prüfung beim Speichern genutzt, damit man ein
+// verstecktes privates Pack nicht versehentlich überschreibt.
+let allKnownPackNames = [];
 // Name des Packs, das aktuell aus der Liste geladen ist (oder zuletzt erfolgreich
 // darunter gespeichert wurde). Nur wenn der aktuelle Pack-Name damit übereinstimmt,
 // darf beim Speichern ohne Rückfrage überschrieben werden.
 let loadedPackName = null;
+
+// Privacy-Index: reservierter Pack-Name "__privacy_index__" (wird automatisch
+// aus der normalen Liste rausgefiltert), enthält { entries: { packName: { passwordHash } } }.
+// Ein Pack gilt als privat, wenn sein Name dort auftaucht.
+let privacyIndex = { entries: {} };
+let privacyIndexLoaded = false;
+// Hashes von Codes, die der Nutzer in dieser Sitzung erfolgreich eingegeben hat.
+let unlockedHashes = new Set();
+
+async function loadPrivacyIndex(){
+  try{
+    const data = await workerGetPack("__privacy_index__");
+    privacyIndex = (data && data.entries) ? data : { entries: {} };
+  } catch(err){
+    console.error("Privacy-Index konnte nicht geladen werden:", err);
+    privacyIndex = { entries: {} };
+  }
+  privacyIndexLoaded = true;
+}
+
+async function savePrivacyIndex(){
+  await workerSaveProject("__privacy_index__", privacyIndex);
+}
 
 async function arrayBufferToBase64(buffer){
   let binary = "";
@@ -1348,6 +1410,15 @@ function loadProjectFromData(data){
   $('packFormat').value = data.packFormat || 48;
   entries = (data.entries || []).map(e => ({ kind: "cit", ...e, id: ++counter }));
   loadedPackName = ($('packName').value || "").trim() || null;
+
+  const isPrivate = !!(loadedPackName && privacyIndex.entries[loadedPackName]);
+  $('packPrivate').checked = isPrivate;
+  $('packPrivateCode').value = "";
+  $('packPrivateCodeHint').textContent = isPrivate
+    ? "Code ist bereits gesetzt — leer lassen, um ihn zu behalten, oder neuen Code eingeben, um ihn zu ändern."
+    : "Wird nur als Hash gespeichert, nicht im Klartext.";
+  updatePackPrivateField();
+
   render();
   updatePackFormatHint();
 }
@@ -1358,6 +1429,10 @@ function resetProject(){
   $('packDesc').value = "Custom Item Textures";
   $('packFormat').value = "48";
   loadedPackName = null;
+  $('packPrivate').checked = false;
+  $('packPrivateCode').value = "";
+  $('packPrivateCodeHint').textContent = "Wird nur als Hash gespeichert, nicht im Klartext.";
+  updatePackPrivateField();
   updatePackFormatHint();
   render();
 }
@@ -1431,18 +1506,38 @@ async function refreshSavedPacks(){
   hint.textContent = "Lade Liste...";
   try{
     const allPacks = await workerListPacks();
+    await loadPrivacyIndex();
     // Diagnose-Test-Packs (von den Test-Buttons oben) ausblenden, ohne sie zu löschen.
     // Alle Test-Buttons speichern unter Namen wie "__minisavetest__" — dieses Muster wird gefiltert.
     // Zusätzlich werden minisavetest/bigsavetest auch ohne die __-Umrandung gefiltert
     // (ältere gespeicherte Testeinträge tragen den Namen ohne Unterstriche).
-    savedPacks = allPacks.filter(p => !/^__.*__$/.test(p.name) && !/minisavetest|bigsavetest/i.test(p.name));
+    const visiblePacks = allPacks.filter(p => !/^__.*__$/.test(p.name) && !/minisavetest|bigsavetest/i.test(p.name));
+    allKnownPackNames = visiblePacks.map(p => p.name);
+
+    // Private Packs (im Privacy-Index gelistet) nur zeigen, wenn ihr Code in
+    // dieser Sitzung bereits erfolgreich eingegeben wurde.
+    const hiddenCount = visiblePacks.filter(p => {
+      const priv = privacyIndex.entries[p.name];
+      return priv && !unlockedHashes.has(priv.passwordHash);
+    }).length;
+    savedPacks = visiblePacks.filter(p => {
+      const priv = privacyIndex.entries[p.name];
+      return !priv || unlockedHashes.has(priv.passwordHash);
+    });
+
     const current = select.value;
     select.innerHTML = '<option value="__new__">🆕 Neues Pack</option>' +
-      savedPacks.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
+      savedPacks.map(p => {
+        const isPrivate = !!privacyIndex.entries[p.name];
+        return `<option value="${escapeHtml(p.name)}">${isPrivate ? "🔒 " : ""}${escapeHtml(p.name)}</option>`;
+      }).join('');
     if(savedPacks.some(p=>p.name === current)) select.value = current;
     hint.textContent = savedPacks.length
       ? `${savedPacks.length} gespeicherte(s) Pack(s) gefunden.`
       : "Noch keine gespeicherten Packs — lade das erste hoch.";
+    $('privacyHint').textContent = hiddenCount
+      ? `🔒 ${hiddenCount} private(s) Pack(s) verborgen — Code eingeben & auf "Freischalten" klicken.`
+      : "";
   } catch(err){
     console.error(err);
     hint.textContent = "⚠️ Fehler beim Laden der Liste.";
@@ -1479,6 +1574,28 @@ $('ghConnectBtn').addEventListener('click', ()=> connectWorker());
 $('refreshSavedBtn').addEventListener('click', ()=>{
   if(!ghState.connected){ showToast("⚠️ Erst mit dem Worker verbinden"); return; }
   refreshSavedPacks();
+});
+
+$('privacyUnlockBtn').addEventListener('click', async ()=>{
+  if(!ghState.connected){ showToast("⚠️ Erst mit dem Worker verbinden"); return; }
+  const code = $('privacyCodeInput').value.trim();
+  if(!code){ showToast("⚠️ Bitte einen Code eingeben"); return; }
+  const hash = await sha256Hex(code);
+  const beforeCount = savedPacks.length;
+  unlockedHashes.add(hash);
+  await refreshSavedPacks();
+  const revealed = savedPacks.length - beforeCount;
+  if(revealed > 0){
+    showToast(`🔓 ${revealed} privates Pack(s) freigeschaltet`);
+    $('privacyCodeInput').value = "";
+  } else {
+    unlockedHashes.delete(hash);
+    showToast("❌ Kein privates Pack mit diesem Code gefunden");
+  }
+});
+
+$('privacyCodeInput').addEventListener('keydown', (e)=>{
+  if(e.key === "Enter"){ e.preventDefault(); $('privacyUnlockBtn').click(); }
 });
 
 async function runZipEndpointTest(){
@@ -1651,7 +1768,7 @@ $('downloadBtn').addEventListener('click', async ()=>{
   // zu überschreiben. Nur relevant, wenn ein Worker verbunden ist.
   let packName = $('packName').value.trim() || "CIT Pack";
   if(ghState.connected){
-    const nameTaken = savedPacks.some(p => p.name === packName);
+    const nameTaken = allKnownPackNames.includes(packName);
     const isEditingLoadedPack = loadedPackName !== null && loadedPackName === packName;
     if(nameTaken && !isEditingLoadedPack){
       const newName = await askForNewPackName(packName);
@@ -1662,6 +1779,17 @@ $('downloadBtn').addEventListener('click', async ()=>{
       packName = newName;
       $('packName').value = packName;
       renderTree();
+    }
+
+    // Privat-Validierung: ein neu als privat markiertes Pack braucht einen Code.
+    const wantsPrivate = $('packPrivate').checked;
+    const codeEntered = $('packPrivateCode').value.trim();
+    const isEditingSamePack = loadedPackName !== null && loadedPackName === packName;
+    const alreadyHasCode = isEditingSamePack && !!privacyIndex.entries[packName];
+    if(wantsPrivate && !codeEntered && !alreadyHasCode){
+      showToast("⚠️ Bitte einen Code für das private Pack vergeben");
+      $('packPrivateCode').focus();
+      return;
     }
   }
 
@@ -1731,6 +1859,34 @@ $('downloadBtn').addEventListener('click', async ()=>{
 
         btn.textContent = "☁️ Speichere ZIP...";
         await workerSaveZip(packName, blob);
+
+        // Privacy-Index synchronisieren: Pack als privat markieren/entfernen.
+        const wantsPrivate = $('packPrivate').checked;
+        const codeEntered = $('packPrivateCode').value.trim();
+        let indexChanged = false;
+        if(wantsPrivate){
+          if(codeEntered){
+            const newHash = await sha256Hex(codeEntered);
+            privacyIndex.entries[packName] = { passwordHash: newHash };
+            unlockedHashes.add(newHash); // eigenes, gerade gesetztes Pack sofort sichtbar
+            indexChanged = true;
+          } else if(!privacyIndex.entries[packName]){
+            // Sollte durch die Validierung oben eigentlich nicht vorkommen.
+            indexChanged = false;
+          }
+        } else if(privacyIndex.entries[packName]){
+          delete privacyIndex.entries[packName];
+          indexChanged = true;
+        }
+        if(indexChanged){
+          try{
+            await savePrivacyIndex();
+          } catch(err){
+            console.error(err);
+            showToast("⚠️ Pack gespeichert, aber Privat-Status konnte nicht synchronisiert werden");
+          }
+        }
+        $('packPrivateCode').value = "";
 
         await refreshSavedPacks();
         $('projectSelect').value = packName;
