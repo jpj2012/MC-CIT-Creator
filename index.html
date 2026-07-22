@@ -349,7 +349,7 @@
       <summary id="githubSummary">Worker-Verbindung einrichten</summary>
       <div class="field" style="margin-top:12px;">
         <label for="workerUrl">Worker-URL</label>
-        <input type="text" id="workerUrl" placeholder="https://cit-pack-worker.dein-name.workers.dev" autocomplete="off">
+        <input type="text" id="workerUrl" value="https://manager.j-juelkenbeck.workers.dev" placeholder="https://cit-pack-worker.dein-name.workers.dev" autocomplete="off">
         <div class="hint">Die URL deines Cloudflare Workers (siehe <code>cit-pack-worker.js</code>). Dein GitHub-Token liegt sicher im Worker — hier musst du nichts Geheimes eingeben.</div>
       </div>
       <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
@@ -1087,7 +1087,10 @@ async function refreshSavedPacks(){
   }
   hint.textContent = "Lade Liste...";
   try{
-    savedPacks = await workerListPacks();
+    const allPacks = await workerListPacks();
+    // Diagnose-Test-Packs (von den Test-Buttons oben) ausblenden, ohne sie zu löschen.
+    // Alle Test-Buttons speichern unter Namen wie "__minisavetest__" — dieses Muster wird gefiltert.
+    savedPacks = allPacks.filter(p => !/^__.*__$/.test(p.name));
     const current = select.value;
     select.innerHTML = '<option value="__new__">🆕 Neues Pack</option>' +
       savedPacks.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
@@ -1101,12 +1104,12 @@ async function refreshSavedPacks(){
   }
 }
 
-$('ghConnectBtn').addEventListener('click', async ()=>{
+async function connectWorker({ silent } = {}){
   const workerUrl = $('workerUrl').value.trim();
 
   if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
-    showToast("⚠️ Bitte eine gültige Worker-URL angeben");
-    return;
+    if(!silent) showToast("⚠️ Bitte eine gültige Worker-URL angeben");
+    return false;
   }
   ghState = { workerUrl, connected: false };
   $('ghStatus').textContent = "Verbinde...";
@@ -1116,26 +1119,27 @@ $('ghConnectBtn').addEventListener('click', async ()=>{
     $('ghStatus').textContent = "✅ Verbunden";
     $('githubSummary').textContent = "Worker: " + workerUrl.replace(/^https?:\/\//,'');
     await refreshSavedPacks();
-    showToast("🔗 Mit Worker verbunden");
+    if(!silent) showToast("🔗 Mit Worker verbunden");
+    return true;
   } catch(err){
     ghState.connected = false;
     $('ghStatus').textContent = "❌ " + err.message;
-    showToast("❌ Verbindung fehlgeschlagen");
+    if(!silent) showToast("❌ Verbindung fehlgeschlagen");
+    return false;
   }
-});
+}
+
+$('ghConnectBtn').addEventListener('click', ()=> connectWorker());
 
 $('refreshSavedBtn').addEventListener('click', ()=>{
   if(!ghState.connected){ showToast("⚠️ Erst mit dem Worker verbinden"); return; }
   refreshSavedPacks();
 });
 
-$('ghZipTestBtn').addEventListener('click', async ()=>{
+async function runZipEndpointTest(){
   const workerUrl = $('workerUrl').value.trim();
   const resultEl = $('ghPingResult');
-  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
-    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
-    return;
-  }
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)) return;
   resultEl.textContent = "Sende ~650 KB rohe Binärdaten an den ZIP-Endpunkt...";
   const t0 = performance.now();
   try{
@@ -1158,17 +1162,15 @@ $('ghZipTestBtn').addEventListener('click', async ()=>{
   } catch(err){
     const ms = Math.round(performance.now() - t0);
     console.error(err);
-    resultEl.textContent = `❌ ZIP-Endpunkt-Test fehlgeschlagen nach ${ms} ms: ${String(err.message || err)} — gefunden! Der Fehler steckt speziell im ZIP-Binär-Endpunkt.`;
+    resultEl.textContent = `❌ ZIP-Endpunkt-Test fehlgeschlagen nach ${ms} ms: ${String(err.message || err)}`;
   }
-});
+}
+$('ghZipTestBtn').addEventListener('click', runZipEndpointTest);
 
-$('ghBigSaveBtn').addEventListener('click', async ()=>{
+async function runBigSaveTest(){
   const workerUrl = $('workerUrl').value.trim();
   const resultEl = $('ghPingResult');
-  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
-    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
-    return;
-  }
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)) return;
   resultEl.textContent = "Speichere ~700 KB Testinhalt echt auf GitHub...";
   const t0 = performance.now();
   try{
@@ -1190,17 +1192,15 @@ $('ghBigSaveBtn').addEventListener('click', async ()=>{
   } catch(err){
     const ms = Math.round(performance.now() - t0);
     console.error(err);
-    resultEl.textContent = `❌ 700-KB-Save (echt, GitHub) fehlgeschlagen nach ${ms} ms: ${String(err.message || err)} — das grenzt es endgültig ein: Größe + echtes GitHub-Schreiben zusammen ist der Auslöser.`;
+    resultEl.textContent = `❌ 700-KB-Save (echt, GitHub) fehlgeschlagen nach ${ms} ms: ${String(err.message || err)}`;
   }
-});
+}
+$('ghBigSaveBtn').addEventListener('click', runBigSaveTest);
 
-$('ghTinySaveBtn').addEventListener('click', async ()=>{
+async function runTinySaveTest(){
   const workerUrl = $('workerUrl').value.trim();
   const resultEl = $('ghPingResult');
-  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
-    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
-    return;
-  }
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)) return;
   resultEl.textContent = "Speichere winziges Test-Pack echt auf GitHub...";
   const t0 = performance.now();
   try{
@@ -1216,22 +1216,20 @@ $('ghTinySaveBtn').addEventListener('click', async ()=>{
     const ms = Math.round(performance.now() - t0);
     const text = await res.text();
     resultEl.textContent = res.ok
-      ? `✅ Echter Mini-Save auf GitHub erfolgreich in ${ms} ms — ${text}. Das GitHub-Schreiben an sich funktioniert also, das Problem hängt an der Datengröße/Menge.`
+      ? `✅ Echter Mini-Save auf GitHub erfolgreich in ${ms} ms — ${text}.`
       : `⚠️ Mini-Save antwortete mit Status ${res.status} nach ${ms} ms: ${text}`;
   } catch(err){
     const ms = Math.round(performance.now() - t0);
     console.error(err);
-    resultEl.textContent = `❌ Mini-Save fehlgeschlagen nach ${ms} ms: ${String(err.message || err)} — dann liegt es NICHT an der Größe, sondern grundsätzlich am GitHub-Schreibpfad (Token-Rechte, Branch-Name, o. ä.).`;
+    resultEl.textContent = `❌ Mini-Save fehlgeschlagen nach ${ms} ms: ${String(err.message || err)}`;
   }
-});
+}
+$('ghTinySaveBtn').addEventListener('click', runTinySaveTest);
 
-$('ghBigPingBtn').addEventListener('click', async ()=>{
+async function runBigPingTest(){
   const workerUrl = $('workerUrl').value.trim();
   const resultEl = $('ghPingResult');
-  if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
-    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
-    return;
-  }
+  if(!workerUrl || !/^https?:\/\//.test(workerUrl)) return;
   const bigString = "x".repeat(700 * 1024); // ~700 KB Testdaten, keine GitHub-Beteiligung
   resultEl.textContent = "Sende ~700 KB Testdaten an /ping...";
   const t0 = performance.now();
@@ -1249,15 +1247,15 @@ $('ghBigPingBtn').addEventListener('click', async ()=>{
   } catch(err){
     const ms = Math.round(performance.now() - t0);
     console.error(err);
-    resultEl.textContent = `❌ 700-KB-Test fehlgeschlagen nach ${ms} ms: ${String(err.message || err)} — das ist ein reines Netzwerk-/Verbindungsproblem, unabhängig von GitHub oder meinem Worker-Code.`;
+    resultEl.textContent = `❌ 700-KB-Test fehlgeschlagen nach ${ms} ms: ${String(err.message || err)}`;
   }
-});
+}
+$('ghBigPingBtn').addEventListener('click', runBigPingTest);
 
-$('ghPingBtn').addEventListener('click', async ()=>{
+async function runPingTest(){
   const workerUrl = $('workerUrl').value.trim();
   const resultEl = $('ghPingResult');
   if(!workerUrl || !/^https?:\/\//.test(workerUrl)){
-    showToast("⚠️ Bitte zuerst eine Worker-URL eintragen");
     return;
   }
   resultEl.textContent = "Teste GET /ping...";
@@ -1278,7 +1276,9 @@ $('ghPingBtn').addEventListener('click', async ()=>{
     console.error(err);
     resultEl.textContent = "❌ Fehler: " + String(err.message || err) + " (das ist der reine Netzwerk-/CORS-Fehler, ganz ohne GitHub-Beteiligung)";
   }
-});
+}
+
+$('ghPingBtn').addEventListener('click', runPingTest);
 
 $('projectSelect').addEventListener('change', async ()=>{
   const val = $('projectSelect').value;
@@ -1385,6 +1385,31 @@ $('packName').addEventListener('input', renderTree);
 
 updatePackFormatHint();
 render();
+
+// Beim Öffnen der Seite automatisch verbinden und alle Diagnose-Tests
+// durchlaufen lassen. Die GitHub-Schreibtests überschreiben immer dieselben
+// "__..._test__"-Dateien (kein wachsender Datenmüll) und werden aus der
+// Pack-Liste ohnehin herausgefiltert.
+(async ()=>{
+  const ok = await connectWorker({ silent: true });
+  if(!ok) return;
+
+  const resultEl = $('ghPingResult');
+  const log = [];
+  const steps = [
+    ['Ping (GET/PUT, klein)', runPingTest],
+    ['Ping (PUT, ~700 KB)', runBigPingTest],
+    ['Mini-Save (GitHub, klein)', runTinySaveTest],
+    ['Großer Save (GitHub, ~700 KB)', runBigSaveTest],
+    ['ZIP-Endpunkt (~650 KB binär)', runZipEndpointTest],
+  ];
+  for(const [label, fn] of steps){
+    await fn();
+    log.push(`• ${label}: ${resultEl.textContent}`);
+  }
+  resultEl.style.whiteSpace = "pre-line";
+  resultEl.textContent = log.join("\n");
+})();
 </script>
 </body>
 </html>
