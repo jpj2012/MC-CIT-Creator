@@ -1,11 +1,12 @@
 {
   "version": 1,
-  "savedAt": "2026-07-22T15:40:03.078Z",
+  "savedAt": "2026-07-23T09:44:29.094Z",
   "packName": "Mein CIT Pack",
   "packDesc": "Custom Item Textures",
-  "packFormat": 48,
+  "packFormat": 93,
   "entries": [
     {
+      "kind": "cit",
       "itemId": "diamond_sword",
       "name": "Excalibur",
       "matchType": "exact",
