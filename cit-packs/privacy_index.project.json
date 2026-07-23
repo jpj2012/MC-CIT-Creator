@@ -5,6 +5,10 @@
     },
     "privat_test": {
       "passwordHash": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
+    },
+    "Halb öffentlich test Pack": {
+      "mode": "semi",
+      "editPasswordHash": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
     }
   }
 }
