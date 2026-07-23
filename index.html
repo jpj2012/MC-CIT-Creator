@@ -1306,8 +1306,28 @@ let loadedPackName = null;
 // Ein Pack gilt als privat, wenn sein Name dort auftaucht.
 let privacyIndex = { entries: {} };
 let privacyIndexLoaded = false;
-// Hashes von Codes, die der Nutzer in dieser Sitzung erfolgreich eingegeben hat.
-let unlockedHashes = new Set();
+// Hashes von Codes, mit denen private Packs bereits freigeschaltet wurden.
+// Wird im localStorage gemerkt, damit private Packs auch in neuen Tabs oder
+// nach einem Reload sichtbar bleiben (nicht nur innerhalb einer Sitzung).
+const UNLOCKED_HASHES_STORAGE_KEY = "citpack_unlocked_hashes";
+function loadUnlockedHashes(){
+  try{
+    const raw = localStorage.getItem(UNLOCKED_HASHES_STORAGE_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch(err){
+    console.error("Freigeschaltete Codes konnten nicht geladen werden:", err);
+    return new Set();
+  }
+}
+function persistUnlockedHashes(){
+  try{
+    localStorage.setItem(UNLOCKED_HASHES_STORAGE_KEY, JSON.stringify(Array.from(unlockedHashes)));
+  } catch(err){
+    console.error("Freigeschaltete Codes konnten nicht gespeichert werden:", err);
+  }
+}
+let unlockedHashes = loadUnlockedHashes();
 
 async function loadPrivacyIndex(){
   try{
@@ -1496,7 +1516,16 @@ function askForNewPackName(conflictName){
   });
 }
 
-async function refreshSavedPacks(){
+// Der Worker entfernt offenbar führende/nachgestellte Unterstriche aus Pack-Namen
+// (z.B. wird "__minisavetest__" zu "minisavetest"). Deshalb hier robust gegen
+// beide Schreibweisen prüfen, statt nur auf das "__..__"-Muster zu vertrauen.
+const RESERVED_PACK_NAMES = ["privacy_index", "minisavetest", "bigsavetest"];
+function isReservedPackName(name){
+  const stripped = String(name).replace(/^_+|_+$/g, '').toLowerCase();
+  return RESERVED_PACK_NAMES.includes(stripped);
+}
+
+async function refreshSavedPacks({ reloadPrivacyIndex = true } = {}){
   const select = $('projectSelect');
   const hint = $('projectSelectHint');
   if(!ghState.connected){
@@ -1506,12 +1535,12 @@ async function refreshSavedPacks(){
   hint.textContent = "Lade Liste...";
   try{
     const allPacks = await workerListPacks();
-    await loadPrivacyIndex();
-    // Diagnose-Test-Packs (von den Test-Buttons oben) ausblenden, ohne sie zu löschen.
-    // Alle Test-Buttons speichern unter Namen wie "__minisavetest__" — dieses Muster wird gefiltert.
-    // Zusätzlich werden minisavetest/bigsavetest auch ohne die __-Umrandung gefiltert
-    // (ältere gespeicherte Testeinträge tragen den Namen ohne Unterstriche).
-    const visiblePacks = allPacks.filter(p => !/^__.*__$/.test(p.name) && !/minisavetest|bigsavetest/i.test(p.name));
+    if(reloadPrivacyIndex || !privacyIndexLoaded){
+      await loadPrivacyIndex();
+    }
+    // Diagnose-Test-Packs (von den Test-Buttons oben) und den internen
+    // Privacy-Index ausblenden, ohne sie zu löschen.
+    const visiblePacks = allPacks.filter(p => !isReservedPackName(p.name));
     allKnownPackNames = visiblePacks.map(p => p.name);
 
     // Private Packs (im Privacy-Index gelistet) nur zeigen, wenn ihr Code in
@@ -1586,6 +1615,7 @@ $('privacyUnlockBtn').addEventListener('click', async ()=>{
   await refreshSavedPacks();
   const revealed = savedPacks.length - beforeCount;
   if(revealed > 0){
+    persistUnlockedHashes();
     showToast(`🔓 ${revealed} privates Pack(s) freigeschaltet`);
     $('privacyCodeInput').value = "";
   } else {
@@ -1869,6 +1899,7 @@ $('downloadBtn').addEventListener('click', async ()=>{
             const newHash = await sha256Hex(codeEntered);
             privacyIndex.entries[packName] = { passwordHash: newHash };
             unlockedHashes.add(newHash); // eigenes, gerade gesetztes Pack sofort sichtbar
+            persistUnlockedHashes();
             indexChanged = true;
           } else if(!privacyIndex.entries[packName]){
             // Sollte durch die Validierung oben eigentlich nicht vorkommen.
@@ -1888,7 +1919,11 @@ $('downloadBtn').addEventListener('click', async ()=>{
         }
         $('packPrivateCode').value = "";
 
-        await refreshSavedPacks();
+        // Den gerade aktualisierten Privacy-Index NICHT sofort wieder vom Server
+        // neu laden (der Worker/GitHub braucht eventuell einen Moment, bis der
+        // frisch gespeicherte Stand beim Lesen wieder ankommt) — sonst würde das
+        // eben erst privat gemachte Pack kurzzeitig wieder öffentlich erscheinen.
+        await refreshSavedPacks({ reloadPrivacyIndex: false });
         $('projectSelect').value = packName;
         loadedPackName = packName;
         showToast("☁️ Auch gespeichert (via Worker)");
