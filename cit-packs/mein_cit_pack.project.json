@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "savedAt": "2026-07-23T09:47:11.788Z",
+  "savedAt": "2026-07-23T12:50:03.636Z",
   "packName": "Mein CIT Pack",
   "packDesc": "Custom Item Textures",
-  "packFormat": 93,
+  "packFormat": 48,
   "entries": [
     {
       "kind": "cit",
