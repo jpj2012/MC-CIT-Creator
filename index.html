@@ -1306,28 +1306,10 @@ let loadedPackName = null;
 // Ein Pack gilt als privat, wenn sein Name dort auftaucht.
 let privacyIndex = { entries: {} };
 let privacyIndexLoaded = false;
-// Hashes von Codes, mit denen private Packs bereits freigeschaltet wurden.
-// Wird im localStorage gemerkt, damit private Packs auch in neuen Tabs oder
-// nach einem Reload sichtbar bleiben (nicht nur innerhalb einer Sitzung).
-const UNLOCKED_HASHES_STORAGE_KEY = "citpack_unlocked_hashes";
-function loadUnlockedHashes(){
-  try{
-    const raw = localStorage.getItem(UNLOCKED_HASHES_STORAGE_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return new Set(Array.isArray(arr) ? arr : []);
-  } catch(err){
-    console.error("Freigeschaltete Codes konnten nicht geladen werden:", err);
-    return new Set();
-  }
-}
-function persistUnlockedHashes(){
-  try{
-    localStorage.setItem(UNLOCKED_HASHES_STORAGE_KEY, JSON.stringify(Array.from(unlockedHashes)));
-  } catch(err){
-    console.error("Freigeschaltete Codes konnten nicht gespeichert werden:", err);
-  }
-}
-let unlockedHashes = loadUnlockedHashes();
+// Hashes von Codes, mit denen private Packs freigeschaltet wurden. Gilt nur für
+// die aktuelle Seiten-Sitzung — nach einem Reload sind private Packs wieder
+// verborgen und müssen erneut mit dem Code freigeschaltet werden.
+let unlockedHashes = new Set();
 
 async function loadPrivacyIndex(){
   try{
@@ -1615,7 +1597,6 @@ $('privacyUnlockBtn').addEventListener('click', async ()=>{
   await refreshSavedPacks();
   const revealed = savedPacks.length - beforeCount;
   if(revealed > 0){
-    persistUnlockedHashes();
     showToast(`🔓 ${revealed} privates Pack(s) freigeschaltet`);
     $('privacyCodeInput').value = "";
   } else {
@@ -1899,7 +1880,6 @@ $('downloadBtn').addEventListener('click', async ()=>{
             const newHash = await sha256Hex(codeEntered);
             privacyIndex.entries[packName] = { passwordHash: newHash };
             unlockedHashes.add(newHash); // eigenes, gerade gesetztes Pack sofort sichtbar
-            persistUnlockedHashes();
             indexChanged = true;
           } else if(!privacyIndex.entries[packName]){
             // Sollte durch die Validierung oben eigentlich nicht vorkommen.
