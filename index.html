@@ -470,14 +470,20 @@
       </div>
     </div>
 
-    <div class="check-row" style="margin-top:14px;">
-      <input type="checkbox" id="packPrivate">
-      <label for="packPrivate">🔒 Pack ist privat (erscheint nur mit Code in der Liste)</label>
+    <div class="field" style="margin-top:14px;">
+      <label>Sichtbarkeit</label>
+      <button type="button" class="btn" id="visibilityToggleBtn" style="min-width:230px; text-align:left;">🌐 Öffentlich</button>
+      <div class="hint" id="visibilityHint">Für alle sichtbar, herunterladbar &amp; bearbeitbar — keine Einschränkungen.</div>
     </div>
-    <div class="field" id="packPrivateCodeField" style="display:none; margin-top:8px; max-width:320px;">
-      <label for="packPrivateCode">Code / Passwort</label>
-      <input type="password" id="packPrivateCode" placeholder="Code für dieses Pack" autocomplete="off">
-      <div class="hint" id="packPrivateCodeHint">Wird nur als Hash gespeichert, nicht im Klartext.</div>
+    <div class="field" id="semiCodeField" style="display:none; margin-top:8px; max-width:340px;">
+      <label for="semiCodeInput">Bearbeitungscode</label>
+      <input type="password" id="semiCodeInput" placeholder="Code zum Bearbeiten/Überschreiben" autocomplete="off">
+      <div class="hint" id="semiCodeHint">Jeder kann das Pack sehen &amp; herunterladen — nur mit diesem Code darf es überschrieben werden. Wird nur als Hash gespeichert.</div>
+    </div>
+    <div class="field" id="privateCodeField" style="display:none; margin-top:8px; max-width:340px;">
+      <label for="privateCodeInput">Code / Passwort</label>
+      <input type="password" id="privateCodeInput" placeholder="Code für dieses Pack" autocomplete="off">
+      <div class="hint" id="privateCodeHint">Wird nur als Hash gespeichert, nicht im Klartext.</div>
     </div>
   </section>
 
@@ -637,6 +643,22 @@
     <div class="modal-actions">
       <button class="btn" id="nameConflictCancelBtn">Abbrechen</button>
       <button class="btn btn-accent" id="nameConflictConfirmBtn">Unter neuem Namen speichern</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="codeModal">
+  <div class="modal-box">
+    <h3 id="codeModalTitle">🔑 Code erforderlich</h3>
+    <p id="codeModalMessage" class="modal-msg"></p>
+    <div class="field">
+      <label for="codeModalInput">Code</label>
+      <input type="password" id="codeModalInput" autocomplete="off">
+    </div>
+    <div class="modal-error" id="codeModalError"></div>
+    <div class="modal-actions">
+      <button class="btn" id="codeModalCancelBtn">Abbrechen</button>
+      <button class="btn btn-accent" id="codeModalConfirmBtn">Bestätigen</button>
     </div>
   </div>
 </div>
@@ -1059,11 +1081,91 @@ async function sha256Hex(text){
   return Array.from(new Uint8Array(hashBuf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-function updatePackPrivateField(){
-  $('packPrivateCodeField').style.display = $('packPrivate').checked ? 'block' : 'none';
+// Sichtbarkeits-Modus des aktuellen Formulars: 'public' | 'semi' | 'private'.
+// Zyklus per Klick: Öffentlich -> Halböffentlich -> Privat -> Öffentlich ...
+let currentVisibilityMode = 'public';
+const VISIBILITY_LABELS = {
+  public:  { icon: "🌐", label: "Öffentlich", hint: "Für alle sichtbar, herunterladbar & bearbeitbar — keine Einschränkungen." },
+  semi:    { icon: "🌗", label: "Halböffentlich", hint: "Für alle sichtbar & herunterladbar — nur mit Code bearbeitbar/überschreibbar." },
+  private: { icon: "🔒", label: "Privat", hint: "Erscheint nur mit dem Code in der Liste, auch nur damit bearbeitbar." }
+};
+function updateVisibilityUI(){
+  const info = VISIBILITY_LABELS[currentVisibilityMode];
+  $('visibilityToggleBtn').textContent = `${info.icon} ${info.label}`;
+  $('visibilityHint').textContent = info.hint;
+  $('semiCodeField').style.display = (currentVisibilityMode === 'semi') ? 'block' : 'none';
+  $('privateCodeField').style.display = (currentVisibilityMode === 'private') ? 'block' : 'none';
 }
-$('packPrivate').addEventListener('change', updatePackPrivateField);
-updatePackPrivateField();
+$('visibilityToggleBtn').addEventListener('click', ()=>{
+  currentVisibilityMode = currentVisibilityMode === 'public' ? 'semi'
+    : currentVisibilityMode === 'semi' ? 'private'
+    : 'public';
+  updateVisibilityUI();
+});
+updateVisibilityUI();
+
+// Liest den gespeicherten Modus eines Privacy-Index-Eintrags robust aus
+// (ältere Einträge hatten nur { passwordHash }, ohne "mode"-Feld -> galten als privat).
+function modeOfEntry(entry){
+  if(!entry) return 'public';
+  if(entry.mode) return entry.mode;
+  return entry.passwordHash ? 'private' : 'public';
+}
+
+// Fragt per Modal einen Code ab und prüft ihn gegen einen bekannten Hash.
+// Bei falschem Code wird erneut gefragt; bei Abbruch wird null zurückgegeben,
+// bei Erfolg der (bestätigte) Hash.
+async function requireCode(existingHash, { title, message }){
+  let currentMessage = message;
+  while(true){
+    const code = await askForCode({ title, message: currentMessage });
+    if(code === null) return null;
+    const hash = await sha256Hex(code);
+    if(hash === existingHash) return hash;
+    currentMessage = message + " ⚠️ Falscher Code, bitte nochmal versuchen.";
+  }
+}
+
+// Generisches Code-Eingabe-Modal (für requireCode()).
+function askForCode({ title, message }){
+  return new Promise((resolve)=>{
+    const overlay = $('codeModal');
+    const titleEl = $('codeModalTitle');
+    const msgEl = $('codeModalMessage');
+    const input = $('codeModalInput');
+    const errorEl = $('codeModalError');
+    const confirmBtn = $('codeModalConfirmBtn');
+    const cancelBtn = $('codeModalCancelBtn');
+
+    titleEl.textContent = title;
+    msgEl.textContent = message;
+    errorEl.textContent = "";
+    input.value = "";
+    overlay.style.display = "flex";
+    setTimeout(()=> input.focus(), 0);
+
+    function cleanup(){
+      overlay.style.display = "none";
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKeydown);
+    }
+    function onConfirm(){
+      const val = input.value;
+      if(!val){ errorEl.textContent = "⚠️ Bitte einen Code eingeben."; return; }
+      cleanup();
+      resolve(val);
+    }
+    function onCancel(){ cleanup(); resolve(null); }
+    function onKeydown(e){
+      if(e.key === "Enter"){ e.preventDefault(); onConfirm(); }
+      if(e.key === "Escape"){ e.preventDefault(); onCancel(); }
+    }
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKeydown);
+  });
+}
 
 function renderTree(){
   const packName = $('packName').value.trim() || "CIT Pack";
@@ -1310,6 +1412,9 @@ let privacyIndexLoaded = false;
 // die aktuelle Seiten-Sitzung — nach einem Reload sind private Packs wieder
 // verborgen und müssen erneut mit dem Code freigeschaltet werden.
 let unlockedHashes = new Set();
+// Hashes von Bearbeitungscodes für halböffentliche Packs, die in dieser Sitzung
+// bereits bestätigt wurden (erlaubt erneutes Überschreiben ohne erneute Abfrage).
+let unlockedEditHashes = new Set();
 
 async function loadPrivacyIndex(){
   try{
@@ -1413,13 +1518,17 @@ function loadProjectFromData(data){
   entries = (data.entries || []).map(e => ({ kind: "cit", ...e, id: ++counter }));
   loadedPackName = ($('packName').value || "").trim() || null;
 
-  const isPrivate = !!(loadedPackName && privacyIndex.entries[loadedPackName]);
-  $('packPrivate').checked = isPrivate;
-  $('packPrivateCode').value = "";
-  $('packPrivateCodeHint').textContent = isPrivate
+  const entry = loadedPackName ? privacyIndex.entries[loadedPackName] : null;
+  currentVisibilityMode = modeOfEntry(entry);
+  $('semiCodeInput').value = "";
+  $('privateCodeInput').value = "";
+  $('semiCodeHint').textContent = (currentVisibilityMode === 'semi')
+    ? "Bearbeitungscode ist bereits gesetzt — leer lassen, um ihn zu behalten, oder neuen Code eingeben, um ihn zu ändern."
+    : "Jeder kann das Pack sehen & herunterladen — nur mit diesem Code darf es überschrieben werden. Wird nur als Hash gespeichert.";
+  $('privateCodeHint').textContent = (currentVisibilityMode === 'private')
     ? "Code ist bereits gesetzt — leer lassen, um ihn zu behalten, oder neuen Code eingeben, um ihn zu ändern."
     : "Wird nur als Hash gespeichert, nicht im Klartext.";
-  updatePackPrivateField();
+  updateVisibilityUI();
 
   render();
   updatePackFormatHint();
@@ -1431,10 +1540,12 @@ function resetProject(){
   $('packDesc').value = "Custom Item Textures";
   $('packFormat').value = "48";
   loadedPackName = null;
-  $('packPrivate').checked = false;
-  $('packPrivateCode').value = "";
-  $('packPrivateCodeHint').textContent = "Wird nur als Hash gespeichert, nicht im Klartext.";
-  updatePackPrivateField();
+  currentVisibilityMode = 'public';
+  $('semiCodeInput').value = "";
+  $('privateCodeInput').value = "";
+  $('semiCodeHint').textContent = "Jeder kann das Pack sehen & herunterladen — nur mit diesem Code darf es überschrieben werden. Wird nur als Hash gespeichert.";
+  $('privateCodeHint').textContent = "Wird nur als Hash gespeichert, nicht im Klartext.";
+  updateVisibilityUI();
   updatePackFormatHint();
   render();
 }
@@ -1474,7 +1585,7 @@ function askForNewPackName(conflictName){
         errorEl.textContent = "⚠️ Das ist derselbe Name — bitte einen anderen wählen.";
         return;
       }
-      if(savedPacks.some(p=>p.name === newName)){
+      if(allKnownPackNames.includes(newName)){
         // Auch der neue Name ist schon vergeben -> gleich nochmal nachfragen.
         cleanup();
         askForNewPackName(newName).then(resolve);
@@ -1525,22 +1636,25 @@ async function refreshSavedPacks({ reloadPrivacyIndex = true } = {}){
     const visiblePacks = allPacks.filter(p => !isReservedPackName(p.name));
     allKnownPackNames = visiblePacks.map(p => p.name);
 
-    // Private Packs (im Privacy-Index gelistet) nur zeigen, wenn ihr Code in
-    // dieser Sitzung bereits erfolgreich eingegeben wurde.
+    // Nur "private" Packs (im Privacy-Index mit mode:'private') werden versteckt,
+    // bis ihr Code in dieser Sitzung eingegeben wurde. "Halböffentliche" Packs
+    // bleiben für alle sichtbar & downloadbar, nur das Überschreiben ist geschützt.
     const hiddenCount = visiblePacks.filter(p => {
       const priv = privacyIndex.entries[p.name];
-      return priv && !unlockedHashes.has(priv.passwordHash);
+      return priv && modeOfEntry(priv) === 'private' && !unlockedHashes.has(priv.passwordHash);
     }).length;
     savedPacks = visiblePacks.filter(p => {
       const priv = privacyIndex.entries[p.name];
-      return !priv || unlockedHashes.has(priv.passwordHash);
+      return !priv || modeOfEntry(priv) !== 'private' || unlockedHashes.has(priv.passwordHash);
     });
 
     const current = select.value;
     select.innerHTML = '<option value="__new__">🆕 Neues Pack</option>' +
       savedPacks.map(p => {
-        const isPrivate = !!privacyIndex.entries[p.name];
-        return `<option value="${escapeHtml(p.name)}">${isPrivate ? "🔒 " : ""}${escapeHtml(p.name)}</option>`;
+        const priv = privacyIndex.entries[p.name];
+        const mode = modeOfEntry(priv);
+        const icon = mode === 'private' ? "🔒 " : mode === 'semi' ? "🌗 " : "";
+        return `<option value="${escapeHtml(p.name)}">${icon}${escapeHtml(p.name)}</option>`;
       }).join('');
     if(savedPacks.some(p=>p.name === current)) select.value = current;
     hint.textContent = savedPacks.length
@@ -1775,13 +1889,33 @@ $('downloadBtn').addEventListener('click', async ()=>{
   const originalText = btn.textContent;
 
   // Vor jeder Aktion prüfen: Würden wir ein GitHub-Pack überschreiben, das wir
-  // gar nicht geladen haben? Dann erst nachfragen, statt es stillschweigend
-  // zu überschreiben. Nur relevant, wenn ein Worker verbunden ist.
+  // gar nicht geladen haben bzw. nicht bearbeiten dürfen? Nur relevant, wenn
+  // ein Worker verbunden ist.
   let packName = $('packName').value.trim() || "CIT Pack";
   if(ghState.connected){
     const nameTaken = allKnownPackNames.includes(packName);
     const isEditingLoadedPack = loadedPackName !== null && loadedPackName === packName;
-    if(nameTaken && !isEditingLoadedPack){
+    const existingEntry = privacyIndex.entries[packName] || null;
+    const existingMode = modeOfEntry(existingEntry);
+
+    if(nameTaken && existingMode === 'semi'){
+      // Halböffentlich: darf unter demselben Namen überschrieben werden — aber
+      // nur mit dem Bearbeitungscode (einmal pro Sitzung abgefragt).
+      const editHash = existingEntry.editPasswordHash;
+      if(!unlockedEditHashes.has(editHash)){
+        const provenHash = await requireCode(editHash, {
+          title: "🌗 Bearbeitungscode erforderlich",
+          message: `"${packName}" ist halböffentlich. Gib den Bearbeitungscode ein, um es zu überschreiben.`
+        });
+        if(provenHash === null){
+          showToast("❌ Speichern abgebrochen");
+          return;
+        }
+        unlockedEditHashes.add(provenHash);
+      }
+    } else if(nameTaken && !isEditingLoadedPack){
+      // Öffentliches oder verstecktes privates Pack, das wir nicht geladen haben
+      // -> anderen Namen verlangen, statt es blind zu überschreiben.
       const newName = await askForNewPackName(packName);
       if(newName === null){
         showToast("❌ Speichern abgebrochen");
@@ -1792,15 +1926,27 @@ $('downloadBtn').addEventListener('click', async ()=>{
       renderTree();
     }
 
-    // Privat-Validierung: ein neu als privat markiertes Pack braucht einen Code.
-    const wantsPrivate = $('packPrivate').checked;
-    const codeEntered = $('packPrivateCode').value.trim();
+    // Sichtbarkeits-Validierung: Halböffentlich/Privat brauchen einen Code,
+    // außer der vorhandene Code soll unverändert beibehalten werden.
+    const freshEntry = privacyIndex.entries[packName] || null;
+    const freshMode = modeOfEntry(freshEntry);
     const isEditingSamePack = loadedPackName !== null && loadedPackName === packName;
-    const alreadyHasCode = isEditingSamePack && !!privacyIndex.entries[packName];
-    if(wantsPrivate && !codeEntered && !alreadyHasCode){
-      showToast("⚠️ Bitte einen Code für das private Pack vergeben");
-      $('packPrivateCode').focus();
-      return;
+    if(currentVisibilityMode === 'semi'){
+      const codeEntered = $('semiCodeInput').value.trim();
+      const keepingExisting = isEditingSamePack && freshMode === 'semi' && freshEntry && freshEntry.editPasswordHash;
+      if(!codeEntered && !keepingExisting){
+        showToast("⚠️ Bitte einen Bearbeitungscode für „Halböffentlich“ vergeben");
+        $('semiCodeInput').focus();
+        return;
+      }
+    } else if(currentVisibilityMode === 'private'){
+      const codeEntered = $('privateCodeInput').value.trim();
+      const keepingExisting = isEditingSamePack && freshMode === 'private' && freshEntry && freshEntry.passwordHash;
+      if(!codeEntered && !keepingExisting){
+        showToast("⚠️ Bitte einen Code für „Privat“ vergeben");
+        $('privateCodeInput').focus();
+        return;
+      }
     }
   }
 
@@ -1871,22 +2017,40 @@ $('downloadBtn').addEventListener('click', async ()=>{
         btn.textContent = "☁️ Speichere ZIP...";
         await workerSaveZip(packName, blob);
 
-        // Privacy-Index synchronisieren: Pack als privat markieren/entfernen.
-        const wantsPrivate = $('packPrivate').checked;
-        const codeEntered = $('packPrivateCode').value.trim();
+        // Privacy-Index synchronisieren: gewünschten Sichtbarkeits-Modus übernehmen.
         let indexChanged = false;
-        if(wantsPrivate){
+        const existingForSave = privacyIndex.entries[packName] || null;
+        if(currentVisibilityMode === 'public'){
+          if(existingForSave){
+            delete privacyIndex.entries[packName];
+            indexChanged = true;
+          }
+        } else if(currentVisibilityMode === 'semi'){
+          const codeEntered = $('semiCodeInput').value.trim();
+          const newEntry = { mode: 'semi' };
           if(codeEntered){
             const newHash = await sha256Hex(codeEntered);
-            privacyIndex.entries[packName] = { passwordHash: newHash };
-            unlockedHashes.add(newHash); // eigenes, gerade gesetztes Pack sofort sichtbar
-            indexChanged = true;
-          } else if(!privacyIndex.entries[packName]){
-            // Sollte durch die Validierung oben eigentlich nicht vorkommen.
-            indexChanged = false;
+            newEntry.editPasswordHash = newHash;
+            unlockedEditHashes.add(newHash); // eigene Änderung sofort autorisiert
+          } else {
+            newEntry.editPasswordHash = existingForSave ? existingForSave.editPasswordHash : null;
           }
-        } else if(privacyIndex.entries[packName]){
-          delete privacyIndex.entries[packName];
+          privacyIndex.entries[packName] = newEntry;
+          indexChanged = true;
+        } else if(currentVisibilityMode === 'private'){
+          const codeEntered = $('privateCodeInput').value.trim();
+          const newEntry = { mode: 'private' };
+          if(codeEntered){
+            const newHash = await sha256Hex(codeEntered);
+            newEntry.passwordHash = newHash;
+            unlockedHashes.add(newHash); // eigenes, gerade gesetztes Pack sofort sichtbar
+          } else {
+            newEntry.passwordHash = existingForSave ? existingForSave.passwordHash : null;
+            if(existingForSave && unlockedHashes.has(existingForSave.passwordHash)){
+              unlockedHashes.add(newEntry.passwordHash);
+            }
+          }
+          privacyIndex.entries[packName] = newEntry;
           indexChanged = true;
         }
         if(indexChanged){
@@ -1894,10 +2058,11 @@ $('downloadBtn').addEventListener('click', async ()=>{
             await savePrivacyIndex();
           } catch(err){
             console.error(err);
-            showToast("⚠️ Pack gespeichert, aber Privat-Status konnte nicht synchronisiert werden");
+            showToast("⚠️ Pack gespeichert, aber Sichtbarkeits-Status konnte nicht synchronisiert werden");
           }
         }
-        $('packPrivateCode').value = "";
+        $('semiCodeInput').value = "";
+        $('privateCodeInput').value = "";
 
         // Den gerade aktualisierten Privacy-Index NICHT sofort wieder vom Server
         // neu laden (der Worker/GitHub braucht eventuell einen Moment, bis der
